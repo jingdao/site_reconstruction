@@ -10,8 +10,6 @@
 SDL_Surface *screen;
 unsigned char* palette;
 bool useColor;
-bool mouseDrag = false;
-int previousX,previousY;
 
 typedef struct {
 	int width,height;
@@ -25,15 +23,6 @@ typedef struct {
 typedef struct {
 	unsigned char r,g,b;
 } Color;
-
-typedef struct {
-	float x1,y1,x2,y2;
-} Match;
-
-typedef struct {
-	int size,capacity;
-	void* data;
-} List;
 
 void drawRect(Image image,Rect rect,Color color) {
 	int top = rect.y < 0 ? 0 : rect.y ;
@@ -76,35 +65,15 @@ void drawRect(Image image,Rect rect,Color color) {
 	}
 }
 
-Rect getVarRect(int x1,int y1,int x2,int y2) {
-	int left = x1 < x2 ? x1 : x2;
-	int right = x1 > x2 ? x1 : x2;
-	int top = y1 < y2 ? y1 : y2;
-	int bottom = y1 > y2 ? y1 : y2;
-	Rect r = {left,top,right-left,bottom-top};
-	return r;
-}
-
 void drawKeyPoint(Image image,int x,int y,Color color) {
 	Rect r = {x-POINT_SIZE,y-POINT_SIZE,POINT_SIZE*2,POINT_SIZE*2};
 	drawRect(image,r,color);
 }
 
-void findCorrespondence(List matches,Rect rect) {
-	Match* m = (Match*)matches.data;
-	int numMatches = 0;
-	for (int i=0;i<matches.size;i++) {
-		if (m[i].x1 > rect.x && m[i].x1 < rect.x + rect.width &&
-			m[i].y1 > rect.y && m[i].y1 < rect.y + rect.height) {
-			printf("%d %f %f\n",numMatches++,m[i].x2,m[i].y2);
-		}
-	}
-}
-
 int main(int argc, char* argv[]) {
 
 	if (argc < 3) {
-		printf("./mark_image in.ppm/in.pgm key.match\n");
+		printf("./mark_image in.ppm/in.pgm ref_point.txt\n");
 		return 1;
 	}
 
@@ -146,25 +115,13 @@ int main(int argc, char* argv[]) {
 	Image image = {width,height,palette};
 	Image screenImage = {width,height,screen->pixels};
 	Color red = {255,0,0};
-	Color yellow = {255,255,0};
-
-	FILE* key_match = fopen(argv[2],"r");
-	List matches = {0,8,NULL};
-	Rect currentRect;
-	matches.data = malloc(8*sizeof(Match));
-	while (fgets(buffer,128,key_match)) {
-		Match m;
-		int id1,id2;
-		if (sscanf(buffer,"%d %f %f %d %f %f",&id1,&m.x1,&m.y1,&id2,&m.x2,&m.y2)==6) {
-			if (matches.size == matches.capacity) {
-				matches.data = realloc(matches.data,matches.capacity*2*sizeof(Match));
-				matches.capacity *= 2;
-			}
-			((Match*)matches.data)[matches.size++] = m;
-		}
+	FILE* point_file = fopen(argv[2],"a");
+	if (!point_file) {
+		printf("%s not found\n",argv[2]);
+		return 1;
 	}
-	printf("Loaded %d matches from %s\n",matches.size,argv[2]);
-	fclose(key_match);
+	double cx = 0.5 * (width-1);
+	double cy = 0.5 * (height-1);
 
 	SDL_Event event;
 	while (true) {
@@ -172,30 +129,15 @@ int main(int argc, char* argv[]) {
 			switch(event.type){
 				case SDL_MOUSEBUTTONDOWN:
 					if (event.button.button == SDL_BUTTON_LEFT) {
-						mouseDrag = true;
-						previousX = event.button.x;
-						previousY = event.button.y;
-					} else {
+						fprintf(point_file,"%f %f\n",(event.button.x-cx)/width,(event.button.y-cy)/height);
 						drawKeyPoint(image,event.button.x,event.button.y,red);
 						memcpy(screen->pixels,palette,width*height*3);
 						SDL_Flip(screen);
 					}
 					break;
 				case SDL_MOUSEMOTION:
-					if (mouseDrag) {
-						memcpy(screen->pixels,palette,width*height*3);
-						currentRect = getVarRect(previousX,previousY,event.motion.x,event.motion.y);
-						drawRect(screenImage,currentRect,yellow);
-						SDL_Flip(screen);
-					}
 					break;
 				case SDL_MOUSEBUTTONUP:
-					if (mouseDrag) {
-						mouseDrag = false;
-						findCorrespondence(matches,currentRect);
-//						memcpy(screen->pixels,palette,width*height*3);
-//						SDL_Flip(screen);
-					}
 					break;
 				case SDL_QUIT:
 					exit(0);

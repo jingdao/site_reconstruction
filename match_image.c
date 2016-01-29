@@ -12,6 +12,9 @@ bool mouseDrag = false;
 int previousX,previousY;
 SDL_Rect leftrect,rightrect;
 int targetIndex = 1;
+int width,height;
+float cx,cy;
+FILE* target_point;
 
 typedef struct {
 	int width,height;
@@ -30,6 +33,13 @@ typedef struct {
 	int size,capacity;
 	void* data;
 } List;
+
+int compare_float (const void * a, const void * b) {
+	float c = *(float*) a - *(int*) b;
+	if (c > 0) return 1;
+	else if (c < 0) return -1;
+	else return 0;
+}
 
 void drawRect(SDL_Surface *surf,SDL_Rect rect,Color color) {
 	int top = rect.y < 0 ? 0 : rect.y ;
@@ -137,32 +147,54 @@ void findCorrespondence(List matches,SDL_Rect rect) {
 		return;
 	Match* m = (Match*)matches.data;
 	Color red = {255,0,0};
-	int numMatches = 0;
+	List xl = {0,8,NULL};
+	List yl = {0,8,NULL};
+	xl.data = malloc(8*sizeof(float));
+	yl.data = malloc(8*sizeof(float));
 	for (int i=0;i<matches.size;i++) {
 		if (m[i].x1 > rect.x && m[i].x1 < rect.x + rect.w &&
 			m[i].y1 > rect.y && m[i].y1 < rect.y + rect.h) {
-			numMatches++;
 			drawKeyPoint(rightscreen,m[i].x2,m[i].y2,red);
+			if (xl.size == xl.capacity) {
+				xl.data = realloc(xl.data,xl.capacity*2*sizeof(float));
+				xl.capacity *= 2;
+				yl.data = realloc(yl.data,yl.capacity*2*sizeof(float));
+				yl.capacity *= 2;
+			}
+			((float*)xl.data)[xl.size++] = m[i].x2;
+			((float*)yl.data)[yl.size++] = m[i].y2;
 		}
 	}
-	printf("Found %d matches\n",numMatches);
+	qsort(xl.data,xl.size,sizeof(float),compare_float);
+	qsort(yl.data,yl.size,sizeof(float),compare_float);
+	float x_med = (((float*)xl.data)[xl.size/2] - cx) / width;
+	float y_med = (((float*)yl.data)[yl.size/2] - cy) / height;
+	fprintf(target_point,"%f %f\n",x_med,y_med);
+	free(xl.data);
+	free(yl.data);
 }
 
 int main(int argc, char* argv[]) {
 
+	if (argc < 2) {
+		printf("./match_image target_point.txt [0.pgm]\n");
+		return 1;
+	}
+
 	SDL_Init(SDL_INIT_VIDEO);
 	SDL_WM_SetCaption("match_image",NULL);
 	char buffer[128];
+	target_point = fopen(argv[1],"w");
 	FILE* ppm = fopen("0.pgm","r");
 	if (!ppm) {
-		printf("%s not found\n",argv[1]);
+		printf("%s not found\n","0.pgm");
 		return 1;
 	}
 	fgets(buffer,128,ppm); //P5 or P6
 	fgets(buffer,128,ppm);
 	char *c = buffer;
-	int width = strtol(c,&c,10);
-	int height = strtol(c,&c,10);
+	width = strtol(c,&c,10);
+	height = strtol(c,&c,10);
 	fgets(buffer,128,ppm); //255
 	screen = SDL_SetVideoMode(width*2,height,24,SDL_SWSURFACE);
 	leftscreen = SDL_CreateRGBSurface(0,width,height,24,0xFF0000,0xFF00,0xFF,0);
@@ -173,6 +205,8 @@ int main(int argc, char* argv[]) {
 	rightimage.data = malloc(width*height*3);
 	leftrect.x = 0; leftrect.y = 0; leftrect.w = width; leftrect.h = height;
 	rightrect.x = width; rightrect.y = 0; rightrect.w = width; rightrect.h = height;
+	cx = 0.5 * (width-1);
+	cy = 0.5 * (height-1);
 
 	fread(leftimage.data,1,width*height,ppm);
 	//populate gray level
@@ -252,6 +286,7 @@ int main(int argc, char* argv[]) {
 		usleep(1000);
 	}
 
+	fclose(target_point);
 	free(leftimage.data);
 	free(rightimage.data);
 

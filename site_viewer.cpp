@@ -5,6 +5,7 @@
 #include <SDL/SDL.h>
 #include <GL/gl.h>
 #include <GL/glu.h>
+#include <vector>
 
 struct PCD {
 	int numPoints;
@@ -19,6 +20,9 @@ enum PCD_data_storage {
 struct Box {
 	float minX,minY,minZ,maxX,maxY,maxZ;
 };
+struct Point {
+	float x,y,z;
+};
 
 double cameraX=30,cameraY=50,cameraZ=40;
 double centerX=0,centerY=0,centerZ=0;
@@ -28,6 +32,47 @@ int previousX,previousY;
 double scrollSpeed = 1.01;
 PCD* cloud;
 PCD* object;
+Point object_location;
+std::vector<float> x_ref,y_ref,x_target,y_target;
+int location_index = 0;
+
+float getDistance(float x1,float y1,float x2,float y2) {
+	float S = 0;
+	S += (x1-x2) * (x1-x2);
+	S += (y1-y2) * (y1-y2);
+	return sqrt(S);
+}
+
+float getAngle(float x1,float y1,float x2,float y2,float x3,float y3) {
+	float a = getDistance(x1,y1,x2,y2);
+	float b = getDistance(x2,y2,x3,y3);
+	float c = getDistance(x1,y1,x3,y3);
+	return acos( (a*a+b*b-c*c) / (2*a*b));
+}
+
+Point getLocation(Point p1,Point p2,float theta,float distance) {
+	float phi = atan2(p2.y-p1.y,p2.x-p1.x);
+	Point q;
+	q.x = p1.x + distance * cos(phi + theta);
+	q.y = p1.y + distance * sin(phi + theta);
+	q.z = 5;
+	return q;
+}
+
+Point getCurrentLocation(int index) {
+	float x1 = x_target[index];
+	float y1 = y_target[index];
+	float x2 = x_ref[index*3];
+	float y2 = y_ref[index*3];
+	float x3 = x_ref[index*3+1];
+	float y3 = y_ref[index*3+1];
+	Point p2 = {28.9,1.4,5.3};
+	Point p3 = {23.8,24.6,4};
+	float theta = getAngle( x1, y1, x2, y2, x3, y3);
+	float distance = getDistance(x1,y1,x2,y2) / getDistance(x2,y2,x3,y3) * getDistance(p2.x,p2.y,p3.x,p3.y);
+	Point q = getLocation(p2,p3,theta,distance);
+	return q;
+}
 
 PCD* NewPCD(const char* fileName, Box* box) {
 	PCD* pcd = new PCD();
@@ -131,8 +176,8 @@ void translatePCD(PCD* pcd,float dx,float dy,float dz) {
 }
 
 int main(int argc,char* argv[]) {
-	if (argc < 2) {
-		printf("./site_viewer scenario.pcd object.pcd\n");
+	if (argc < 5) {
+		printf("./site_viewer scenario.pcd object.pcd ref_point.txt target_point.txt\n");
 		return 1;
 	}
 
@@ -140,10 +185,43 @@ int main(int argc,char* argv[]) {
 	if (!object)
 		return 1;
 	Box object_box = getBoundingBox(object);
+	Point object_location = {
+		(object_box.maxX - object_box.minX)/2,
+		(object_box.maxY - object_box.minY)/2,
+		(object_box.maxZ - object_box.minZ)/2,
+	};
 	printf("Loaded %s (%f %f %f %f %f %f)\n",argv[2],object_box.minX,object_box.maxX,object_box.minY,object_box.maxY,object_box.minZ,object_box.maxZ);
 	cloud = NewPCD(argv[1],&object_box);
 	if (!cloud)
 		return 1;
+
+	FILE* ref_point = fopen(argv[3],"r");
+	if (!ref_point) {
+		printf("Cannot open %s\n",argv[3]);
+		return 1;
+	}
+	FILE* target_point = fopen(argv[4],"r");
+	if (!target_point) {
+		printf("Cannot open %s\n",argv[4]);
+		return 1;
+	}
+	char buffer[128];
+	while (fgets(buffer,128,ref_point)) {
+		float x,y;
+		if (sscanf(buffer,"%f %f",&x,&y)==2) {
+			x_ref.push_back(x);
+			y_ref.push_back(y);
+		}
+	}
+	while (fgets(buffer,128,target_point)) {
+		float x,y;
+		if (sscanf(buffer,"%f %f",&x,&y)==2) {
+			x_target.push_back(x);
+			y_target.push_back(y);
+		}
+	}
+	Point previous_location,current_location;
+	previous_location = getCurrentLocation(location_index++);
 	
 	SDL_Init(SDL_INIT_VIDEO);
 	SDL_WM_SetCaption("Point Cloud", NULL);
@@ -174,7 +252,12 @@ int main(int argc,char* argv[]) {
 						cameraZ -= 1;
 						break;
 						case 'n':
-						translatePCD(object,1,0,0);
+						current_location = getCurrentLocation(location_index++);
+						translatePCD(object,
+							current_location.x-previous_location.x,
+							current_location.y-previous_location.y,
+							current_location.z-previous_location.z);
+						previous_location = current_location;
 						break;
 						default:
 						break;
