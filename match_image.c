@@ -11,7 +11,7 @@ SDL_Surface *screen, *leftscreen, *rightscreen;
 bool mouseDrag = false;
 int previousX,previousY;
 SDL_Rect leftrect,rightrect;
-int targetIndex = 1;
+int targetIndex = 0;
 int width,height;
 float cx,cy;
 FILE* target_point;
@@ -177,7 +177,7 @@ void findCorrespondence(List matches,SDL_Rect rect) {
 int main(int argc, char* argv[]) {
 
 	if (argc < 2) {
-		printf("./match_image target_point.txt [0.pgm]\n");
+		printf("./match_image target_point.txt target.pgm\n");
 		return 1;
 	}
 
@@ -185,9 +185,9 @@ int main(int argc, char* argv[]) {
 	SDL_WM_SetCaption("match_image",NULL);
 	char buffer[128];
 	target_point = fopen(argv[1],"w");
-	FILE* ppm = fopen("0.pgm","r");
+	FILE* ppm = fopen(argv[2],"r");
 	if (!ppm) {
-		printf("%s not found\n","0.pgm");
+		printf("%s not found\n",argv[2]);
 		return 1;
 	}
 	fgets(buffer,128,ppm); //P5 or P6

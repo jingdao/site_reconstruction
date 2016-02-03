@@ -70,15 +70,24 @@ void drawKeyPoint(Image image,int x,int y,Color color) {
 	drawRect(image,r,color);
 }
 
+void imgcpy(Image image,SDL_Surface* surf) {
+	unsigned char* src = image.data, *dst = surf->pixels;
+	for (int i=0;i<image.height;i++) {
+		memcpy(dst,src,image.width*3);
+		src += image.width*3;
+		dst += surf->pitch;
+	}
+}
+
 int main(int argc, char* argv[]) {
 
-	if (argc < 3) {
-		printf("./mark_image in.ppm/in.pgm ref_point.txt\n");
+	if (argc < 2) {
+		printf("./mark_image in.ppm/in.pgm\n");
 		return 1;
 	}
 
 	SDL_Init(SDL_INIT_VIDEO);
-	SDL_WM_SetCaption("mark_image",NULL);
+	SDL_WM_SetCaption(argv[1],NULL);
 	char buffer[128];
 	FILE* ppm = fopen(argv[1],"r");
 	if (!ppm) {
@@ -109,19 +118,23 @@ int main(int argc, char* argv[]) {
 			palette[i*3+2] = palette[i*3+1] = palette[i*3] = palette[i];
 		}
 	}
-	memcpy(screen->pixels,palette,width*height*3);
-	SDL_Flip(screen);
 	fclose(ppm);
 	Image image = {width,height,palette};
 	Image screenImage = {width,height,screen->pixels};
 	Color red = {255,0,0};
-	FILE* point_file = fopen(argv[2],"a");
+	if (useColor)
+		strcpy(strstr(argv[1],".ppm"),".rpt");
+	else
+		strcpy(strstr(argv[1],".pgm"),".rpt");
+	FILE* point_file = fopen(argv[1],"w");
 	if (!point_file) {
-		printf("%s not found\n",argv[2]);
+		printf("%s not found\n",argv[1]);
 		return 1;
 	}
 	double cx = 0.5 * (width-1);
 	double cy = 0.5 * (height-1);
+	imgcpy(image,screen);
+	SDL_Flip(screen);
 
 	SDL_Event event;
 	while (true) {
@@ -131,7 +144,7 @@ int main(int argc, char* argv[]) {
 					if (event.button.button == SDL_BUTTON_LEFT) {
 						fprintf(point_file,"%f %f\n",(event.button.x-cx)/width,(event.button.y-cy)/height);
 						drawKeyPoint(image,event.button.x,event.button.y,red);
-						memcpy(screen->pixels,palette,width*height*3);
+						imgcpy(image,screen);
 						SDL_Flip(screen);
 					}
 					break;

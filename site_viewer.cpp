@@ -176,8 +176,8 @@ void translatePCD(PCD* pcd,float dx,float dy,float dz) {
 }
 
 int main(int argc,char* argv[]) {
-	if (argc < 5) {
-		printf("./site_viewer scenario.pcd object.pcd ref_point.txt target_point.txt\n");
+	if (argc < 4) {
+		printf("./site_viewer scenario.pcd object.pcd target_point.txt [0.rpt ... n.rpt]\n");
 		return 1;
 	}
 
@@ -195,23 +195,26 @@ int main(int argc,char* argv[]) {
 	if (!cloud)
 		return 1;
 
-	FILE* ref_point = fopen(argv[3],"r");
-	if (!ref_point) {
+	FILE* target_point = fopen(argv[3],"r");
+	if (!target_point) {
 		printf("Cannot open %s\n",argv[3]);
 		return 1;
 	}
-	FILE* target_point = fopen(argv[4],"r");
-	if (!target_point) {
-		printf("Cannot open %s\n",argv[4]);
-		return 1;
-	}
 	char buffer[128];
-	while (fgets(buffer,128,ref_point)) {
-		float x,y;
-		if (sscanf(buffer,"%f %f",&x,&y)==2) {
-			x_ref.push_back(x);
-			y_ref.push_back(y);
+	int rpt=0;
+	while (true) {
+		sprintf(buffer,"%d.rpt",rpt++);
+		FILE* ref_point = fopen(buffer,"r");
+		if (!ref_point)
+			break;
+		while (fgets(buffer,128,ref_point)) {
+			float x,y;
+			if (sscanf(buffer,"%f %f",&x,&y)==2) {
+				x_ref.push_back(x);
+				y_ref.push_back(y);
+			}
 		}
+		fclose(ref_point);
 	}
 	while (fgets(buffer,128,target_point)) {
 		float x,y;
@@ -220,6 +223,7 @@ int main(int argc,char* argv[]) {
 			y_target.push_back(y);
 		}
 	}
+	fclose(target_point);
 	Point previous_location,current_location;
 	previous_location = getCurrentLocation(location_index++);
 	
