@@ -6,6 +6,7 @@
 #include <GL/gl.h>
 #include <GL/glu.h>
 #include <vector>
+#define DEBUG 1
 
 struct PCD {
 	int numPoints;
@@ -23,6 +24,10 @@ struct Box {
 struct Point {
 	float x,y,z;
 };
+struct CamModel {
+	Point center,ul,ur,bl,br;
+};
+
 
 double cameraX=30,cameraY=50,cameraZ=40;
 double centerX=0,centerY=0,centerZ=0;
@@ -30,11 +35,15 @@ double upX=0,upY=0,upZ=1;
 int mouseIndex = 0;
 int previousX,previousY;
 double scrollSpeed = 1.01;
+float cameraSize = 0.5;
 PCD* cloud;
 PCD* object;
-Point object_location;
-std::vector<float> x_ref,y_ref,x_target,y_target;
+std::vector<Point> object_location;
 int location_index = 0;
+std::vector<CamModel> camera_location;
+std::vector<float> location_error;
+std::vector<int> match_target;
+std::vector<Point> scan_line;
 
 float getDistance(float x1,float y1,float x2,float y2) {
 	float S = 0;
@@ -59,19 +68,31 @@ Point getLocation(Point p1,Point p2,float theta,float distance) {
 	return q;
 }
 
-Point getCurrentLocation(int index) {
-	float x1 = x_target[index];
-	float y1 = y_target[index];
-	float x2 = x_ref[index*3];
-	float y2 = y_ref[index*3];
-	float x3 = x_ref[index*3+1];
-	float y3 = y_ref[index*3+1];
-	Point p2 = {28.9,1.4,5.3};
-	Point p3 = {23.8,24.6,4};
-	float theta = getAngle( x1, y1, x2, y2, x3, y3);
-	float distance = getDistance(x1,y1,x2,y2) / getDistance(x2,y2,x3,y3) * getDistance(p2.x,p2.y,p3.x,p3.y);
-	Point q = getLocation(p2,p3,theta,distance);
-	return q;
+void rotationFromAngle(float* M, float rx,float ry, float rz) {
+	float r1 = rx;
+	float r2 = ry;
+	float r3 = rz;
+	M[0] = cos(r2)*cos(r3);
+	M[1] = - cos(r1) * sin(r3) + cos(r3) * sin(r1) * sin(r2);
+	M[2] = sin(r1) * sin(r3) + cos(r1) * cos(r3) * sin(r2);
+	M[3] = cos(r2) * sin(r3);
+	M[4] = cos(r1) * cos(r3) + sin(r1) * sin(r2) * sin(r3);
+	M[5] = - cos(r3) * sin(r1) + cos(r1) * sin(r2) * sin(r3);
+	M[6] = -sin(r2);
+	M[7] = cos(r2) * sin(r1);
+	M[8] = cos(r1) * cos(r2);
+}
+
+Point transformPoint(Point p,float* R,float* T) {
+	Point res;
+	res.x = R[0] * p.x  + R[1] * p.y + R[2] * p.z + T[0];
+	res.y = R[3] * p.x  + R[4] * p.y + R[5] * p.z + T[1];
+	res.z = R[6] * p.x  + R[7] * p.y + R[8] * p.z + T[2];
+	return res;
+}
+
+bool isValid(int index) {
+	return location_error[index]>=0 && location_error[index]<=10 && match_target[index] > 2;
 }
 
 PCD* NewPCD(const char* fileName, Box* box) {
@@ -132,6 +153,13 @@ Box getBoundingBox(PCD* pcd) {
 	return b;
 }
 
+void drawLine(Point p1,Point p2) {
+	glBegin(GL_LINES);
+	glVertex3d(p1.x,p1.y,p1.z);
+	glVertex3d(p2.x,p2.y,p2.z);
+	glEnd();
+}
+
 void draw() {
 	glPushAttrib(GL_ALL_ATTRIB_BITS);
 	glPushMatrix();
@@ -154,11 +182,50 @@ void draw() {
 
 	glPointSize(12.0);
 	glBegin(GL_POINTS);
-	glColor3ub(255,0,0);
+	if (location_index == 0)
+		glColor3ub(255,255,0);
+	else if (location_error[location_index-1] < 0 || match_target[location_index-1] <=2)
+		glColor3ub(255,0,0);
+	else {
+		double intensity = 255.0 / ((int)location_error[location_index-1] + 1);
+		glColor3ub(0,(unsigned char)intensity,0);
+	}
+
 	for (int n = 0; n < object->numPoints; n++){
 		glVertex3d(object->float_data[n*4],object->float_data[n*4+1],object->float_data[n*4+2]);
 	}
 	glEnd();
+
+	glLineWidth(1.0);
+	glColor3ub(0,255,0);
+	if (location_index == 0) {
+		for (size_t n = 0; n < camera_location.size(); n++){
+			drawLine(camera_location[n].center,camera_location[n].ul);
+			drawLine(camera_location[n].center,camera_location[n].ur);
+			drawLine(camera_location[n].center,camera_location[n].bl);
+			drawLine(camera_location[n].center,camera_location[n].br);
+			drawLine(camera_location[n].ul,camera_location[n].bl);
+			drawLine(camera_location[n].ur,camera_location[n].br);
+			drawLine(camera_location[n].ul,camera_location[n].ur);
+			drawLine(camera_location[n].bl,camera_location[n].br);
+		}
+	} else {
+		drawLine(camera_location[location_index-1].center,camera_location[location_index-1].ul);
+		drawLine(camera_location[location_index-1].center,camera_location[location_index-1].ur);
+		drawLine(camera_location[location_index-1].center,camera_location[location_index-1].bl);
+		drawLine(camera_location[location_index-1].center,camera_location[location_index-1].br);
+		drawLine(camera_location[location_index-1].ul,camera_location[location_index-1].bl);
+		drawLine(camera_location[location_index-1].ur,camera_location[location_index-1].br);
+		drawLine(camera_location[location_index-1].ul,camera_location[location_index-1].ur);
+		drawLine(camera_location[location_index-1].bl,camera_location[location_index-1].br);
+#if DEBUG
+		if (isValid(location_index - 1)) {
+			glColor3ub(255,0,0);
+			drawLine(scan_line[2*(location_index-1)],scan_line[2*(location_index-1)+1]);
+		}
+#endif
+	}
+
 
 	glFlush();
 	SDL_GL_SwapBuffers();
@@ -177,56 +244,64 @@ void translatePCD(PCD* pcd,float dx,float dy,float dz) {
 
 int main(int argc,char* argv[]) {
 	if (argc < 4) {
-		printf("./site_viewer scenario.pcd object.pcd target_point.txt [0.rpt ... n.rpt]\n");
+		printf("./site_viewer scenario.pcd object.pcd camera_location.txt\n");
 		return 1;
 	}
 
+	char buffer[128];
 	object = NewPCD(argv[2],NULL);
 	if (!object)
 		return 1;
 	Box object_box = getBoundingBox(object);
-	Point object_location = {
-		(object_box.maxX - object_box.minX)/2,
-		(object_box.maxY - object_box.minY)/2,
-		(object_box.maxZ - object_box.minZ)/2,
+	Point previous_location = {
+		(object_box.maxX + object_box.minX)/2,
+		(object_box.maxY + object_box.minY)/2,
+		(object_box.maxZ + object_box.minZ)/2,
 	};
+	Point current_location;
 	printf("Loaded %s (%f %f %f %f %f %f)\n",argv[2],object_box.minX,object_box.maxX,object_box.minY,object_box.maxY,object_box.minZ,object_box.maxZ);
 	cloud = NewPCD(argv[1],&object_box);
 	if (!cloud)
 		return 1;
 
-	FILE* target_point = fopen(argv[3],"r");
-	if (!target_point) {
+	Point center = {0,0,0};
+	Point ul = {-cameraSize,-cameraSize,cameraSize};
+	Point ur = {cameraSize,-cameraSize,cameraSize};
+	Point bl = {-cameraSize,cameraSize,cameraSize};
+	Point br = {cameraSize,cameraSize,cameraSize};
+	FILE* ref_camera_loc = fopen(argv[3],"r");
+	if (!ref_camera_loc) {
 		printf("Cannot open %s\n",argv[3]);
 		return 1;
 	}
-	char buffer[128];
-	int rpt=0;
-	while (true) {
-		sprintf(buffer,"%d.rpt",rpt++);
-		FILE* ref_point = fopen(buffer,"r");
-		if (!ref_point)
-			break;
-		while (fgets(buffer,128,ref_point)) {
-			float x,y;
-			if (sscanf(buffer,"%f %f",&x,&y)==2) {
-				x_ref.push_back(x);
-				y_ref.push_back(y);
-			}
+	float T[3];
+	float R[9];
+	float rx,ry,rz;
+	Point viewVec;
+	float err;
+	int numMatch;
+	while (fgets(buffer,128,ref_camera_loc)) {
+		if (sscanf(buffer,"%f %f %f %f %f %f %f %f %f %f %d",T,T+1,T+2,&rx,&ry,&rz,&viewVec.x,&viewVec.y,&viewVec.z,&err,&numMatch)==11) {
+			rotationFromAngle(R,rx,ry,rz);
+			CamModel cam;
+			cam.center = transformPoint(center,R,T);
+			cam.ul = transformPoint(ul,R,T);
+			cam.ur = transformPoint(ur,R,T);
+			cam.bl = transformPoint(bl,R,T);
+			cam.br = transformPoint(br,R,T);
+			camera_location.push_back(cam);
+			float scale = (previous_location.z - T[2]) / viewVec.z;
+			Point projection = {T[0]+scale*viewVec.x,T[1]+scale*viewVec.y,previous_location.z};
+			object_location.push_back(projection);
+			location_error.push_back(err);
+			match_target.push_back(numMatch);
+			scan_line.push_back(cam.center);
+			scan_line.push_back(projection);
 		}
-		fclose(ref_point);
 	}
-	while (fgets(buffer,128,target_point)) {
-		float x,y;
-		if (sscanf(buffer,"%f %f",&x,&y)==2) {
-			x_target.push_back(x);
-			y_target.push_back(y);
-		}
-	}
-	fclose(target_point);
-	Point previous_location,current_location;
-	previous_location = getCurrentLocation(location_index++);
-	
+	printf("Loaded %lu reference cameras\n",camera_location.size());
+	fclose(ref_camera_loc);
+
 	SDL_Init(SDL_INIT_VIDEO);
 	SDL_WM_SetCaption("Point Cloud", NULL);
 	SDL_SetVideoMode(1800,1000, 32, SDL_OPENGL);
@@ -256,12 +331,18 @@ int main(int argc,char* argv[]) {
 						cameraZ -= 1;
 						break;
 						case 'n':
-						current_location = getCurrentLocation(location_index++);
-						translatePCD(object,
-							current_location.x-previous_location.x,
-							current_location.y-previous_location.y,
-							current_location.z-previous_location.z);
-						previous_location = current_location;
+						if (location_index >= object_location.size())
+							location_index = 0;
+						printf("location_index: %d error: %f\n",location_index,location_error[location_index]);
+						if (isValid(location_index)) {
+							current_location = object_location[location_index];
+							translatePCD(object,
+								current_location.x-previous_location.x,
+								current_location.y-previous_location.y,
+								current_location.z-previous_location.z);
+							previous_location = current_location;
+						}
+						location_index++;
 						break;
 						default:
 						break;

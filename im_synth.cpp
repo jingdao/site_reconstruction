@@ -111,17 +111,18 @@ Quaternion quaternionFromAngle(float rx,float ry, float rz) {
 int SetRGB(Image* bmp, int x, int y, unsigned char r, unsigned char g, unsigned char b) {
 	if (!bmp || x < 0 || y < 0 || x >= bmp->width || y >= bmp->height) return 0;
 	int offset = (x + y*bmp->width) * 3;
-	bmp->data[offset] = b;
+	bmp->data[offset] = r;
 	bmp->data[offset + 1] = g;
-	bmp->data[offset + 2] = r;
+	bmp->data[offset + 2] = b;
 	return 1;
 }
 
-void Show3DProjection(Image* bmp, PCD* pcd, Camera camera) {
+void Show3DProjection(Image* bmp, PCD* pcd, Camera camera, Point* depth_buffer) {
 	memset(bmp->data,0,bmp->width*bmp->height*3);
+	memset(depth_buffer,0,bmp->width*bmp->height*sizeof(Point));
 	int i;
 	Quaternion q, newPoint;
-	std::vector<float> xl,yl;
+	std::vector<float> xl,yl,zl;
 	std::vector<int> index; 
 	q.r = 0;
 	for (i = 0; i < pcd->numPoints; i++) {
@@ -132,38 +133,34 @@ void Show3DProjection(Image* bmp, PCD* pcd, Camera camera) {
 		newPoint = quaternionRot(camera.rotation, q);
 		//next map points to image plane based on camera focal length
 		if (newPoint.k > 0) { //if not behind camera
-			xl.push_back(newPoint.i * camera.focal_length / newPoint.k);
-			yl.push_back(newPoint.j * camera.focal_length / newPoint.k);
+			xl.push_back(newPoint.i);
+			yl.push_back(newPoint.j);
+			zl.push_back(newPoint.k);
 			index.push_back(i);
 		}
 	}
 	//lastly plot these points on xy plane of bitmap
 	unsigned char r, g, b;
+	int x,y;
 	int pixelsDrawn = 0;
 	float maxX = -1;
 	float maxY = -1;
-	float x, y, scaleX, scaleY;
-//	for (unsigned int j = 0; j < xl.size(); j++) {
-//		if (fabs(xl[j]) > maxX) maxX = fabs(xl[j]);
-//		if (fabs(yl[j]) > maxY) maxY = fabs(yl[j]);
-//	}
-//	if (maxX > maxY) {
-//		scaleX = (bmp->width - 1) / (maxX * 2);
-//		scaleY = (bmp->height - 1) / (maxX * 2);
-//	}
-//	else {
-//		scaleX = (bmp->width - 1) / (maxY * 2);
-//		scaleY = (bmp->height - 1) / (maxY * 2);
-//	}
-	scaleX = 1;
-	scaleY = 1;
+	float scaleX=1, scaleY=1;
 	for (unsigned int j=0;j<xl.size();j++) {
-		x = xl[j] * scaleX + bmp->width / 2;
-		y = yl[j] * scaleY + bmp->height / 2;
-		r = pcd->color_data[index[j]*3];
-		g = pcd->color_data[index[j]*3+1];
-		b = pcd->color_data[index[j]*3+2];
-		pixelsDrawn += SetRGB(bmp, (int)x, (int)y, r, g, b);
+		x = (int) ((xl[j]*camera.focal_length/zl[j]) * scaleX + bmp->width / 2);
+		y = (int) ((yl[j]*camera.focal_length/zl[j]) * scaleX + bmp->height / 2);
+		if (x < 0 || y < 0 || x >= bmp->width || y >= bmp->height)
+			continue;
+		Point* p = depth_buffer + y*bmp->width+x;
+		if (p->z == 0 || p->z > zl[j]) {
+			p->x = pcd->float_data[index[j] * 4];
+			p->y = pcd->float_data[index[j] * 4 + 1];
+			p->z = pcd->float_data[index[j] * 4 + 2];
+			r = pcd->color_data[index[j]*3];
+			g = pcd->color_data[index[j]*3+1];
+			b = pcd->color_data[index[j]*3+2];
+			pixelsDrawn += SetRGB(bmp, x, y, r, g, b);
+		}
 	}
 	printf("(%.0f %.0f %.0f %f %f %f) %d pixels drawn\n",
 		camera.position.i,camera.position.j,camera.position.k,
@@ -171,7 +168,7 @@ void Show3DProjection(Image* bmp, PCD* pcd, Camera camera) {
 		pixelsDrawn);
 }
 
-void fillImage(Image* bmp) {
+void fillImage(Image* bmp,Point* depth_buffer) {
 	bool updated = true;
 	bool* filled = new bool[bmp->height * bmp->width];
 	unsigned char* c = bmp->data;
@@ -189,23 +186,36 @@ void fillImage(Image* bmp) {
 			for (int j=1;j<bmp->width-1;j++) {
 				if (!filled[j + i * bmp->width]) {
 					int r=0,g=0,b=0,count=0;
+					std::vector<Point> neighbors;
 					if (filled[j - 1 + i * bmp->width]) {
 						r+=c[-3]; g+=c[-2]; b+=c[-1]; count++;
+						neighbors.push_back(depth_buffer[j - 1 + i * bmp->width]);
 					}
 					if (filled[j + 1 + i * bmp->width]) {
 						r+=c[3]; g+=c[4]; b+=c[5]; count++;
+						neighbors.push_back(depth_buffer[j + 1 + i * bmp->width]);
 					}
 					if (filled[j + (i-1) * bmp->width]) {
 						r+=c[-bmp->width*3]; g+=c[-bmp->width*3+1]; b+=c[-bmp->width*3+2]; count++;
+						neighbors.push_back(depth_buffer[j + (i-1) * bmp->width]);
 					}
 					if (filled[j + (i+1) * bmp->width]) {
 						r+=c[bmp->width*3]; g+=c[bmp->width*3+1]; b+=c[bmp->width*3+2]; count++;
+						neighbors.push_back(depth_buffer[j + (i+1) * bmp->width]);
 					}
 					if (count) {
 						filled[j + i * bmp->width] = true;
 						c[0] = (unsigned char) (r/count);
 						c[1] = (unsigned char) (g/count);
 						c[2] = (unsigned char) (b/count);
+						for (int k=0;k<count;k++) {
+							depth_buffer[j + i * bmp->width].x += neighbors[k].x;
+							depth_buffer[j + i * bmp->width].y += neighbors[k].y;
+							depth_buffer[j + i * bmp->width].z += neighbors[k].z;
+						}
+						depth_buffer[j + i * bmp->width].x /= count;
+						depth_buffer[j + i * bmp->width].y /= count;
+						depth_buffer[j + i * bmp->width].z /= count;
 					} else {
 						updated = true;
 					}
@@ -223,6 +233,8 @@ void fillImage(Image* bmp) {
 		bmp->data[((bmp->height-1)*bmp->width+i)*3] = bmp->data[((bmp->height-2)*bmp->width+i)*3];
 		bmp->data[((bmp->height-1)*bmp->width+i)*3+1] = bmp->data[((bmp->height-2)*bmp->width+i)*3+1];
 		bmp->data[((bmp->height-1)*bmp->width+i)*3+2] = bmp->data[((bmp->height-2)*bmp->width+i)*3+2];
+		depth_buffer[i] = depth_buffer[bmp->width+i];
+		depth_buffer[(bmp->height-1)*bmp->width+i] = depth_buffer[(bmp->height-2)*bmp->width+i];
 	}
 	for (int i=0;i<bmp->height;i++) {
 		bmp->data[i*bmp->width*3] = bmp->data[(i*bmp->width+1)*3];
@@ -231,6 +243,8 @@ void fillImage(Image* bmp) {
 		bmp->data[((i+1)*bmp->width-1)*3] = bmp->data[((i+1)*bmp->width-2)*3];
 		bmp->data[((i+1)*bmp->width-1)*3+1] = bmp->data[((i+1)*bmp->width-2)*3+1];
 		bmp->data[((i+1)*bmp->width-1)*3+2] = bmp->data[((i+1)*bmp->width-2)*3+2];
+		depth_buffer[i*bmp->width] = depth_buffer[i*bmp->width+1];
+		depth_buffer[(i+1)*bmp->width-1] = depth_buffer[(i+1)*bmp->width-2];
 	}
 	free(filled);
 }
@@ -299,8 +313,8 @@ void imgcpy(Image image,SDL_Surface* surf) {
 
 int main(int argc,char* argv[]) {
 
-	if (argc < 3) {
-		printf("./site_viewer scenario.pcd site.ppm\n");
+	if (argc < 6) {
+		printf("./im_synth width height scenario.pcd site.ppm depth_buffer.txt\n");
 		return 1;
 	}
 
@@ -308,11 +322,15 @@ int main(int argc,char* argv[]) {
 	if (!site)
 		return 1;
 	
-	int width=600,height=400;
+	int width=atoi(argv[2]);
+	int height=atoi(argv[3]);
 	float speed=5; 
+	float max_depth,min_depth,depth_scale;
 	Image ppm = {width,height,NULL};
 	ppm.data = new unsigned char[width*height*3];
 	SDL_Surface* screen = SDL_SetVideoMode(width,height,24,SDL_SWSURFACE);
+	Point* depth_buffer = new Point[width*height]();
+	FILE* depth_buffer_txt, *depth_buffer_pgm;
 
 	Camera cam = {
 		{0,30,40,30},
@@ -323,7 +341,7 @@ int main(int argc,char* argv[]) {
 
 	SDL_Init(SDL_INIT_VIDEO);
 	SDL_WM_SetCaption(argv[1],NULL);
-	Show3DProjection(&ppm,site,cam);
+	Show3DProjection(&ppm,site,cam,depth_buffer);
 	imgcpy(ppm,screen);
 	SDL_Flip(screen);
 
@@ -376,17 +394,42 @@ int main(int argc,char* argv[]) {
 						cam.rotation = quaternionFromAngle(cam.pitch,cam.roll,cam.yaw);
 						break;
 						case 's':
-						writePPM(argv[2],ppm.data,ppm.width,ppm.height);
+						writePPM(argv[4],ppm.data,ppm.width,ppm.height);
+						depth_buffer_txt = fopen(argv[5],"w");
+						for (int i=0;i<width*height;i++) {
+							fprintf(depth_buffer_txt,"%f %f %f\n",
+								depth_buffer[i].x,
+								depth_buffer[i].y,
+								depth_buffer[i].z);
+						}
+						fclose(depth_buffer_txt);
+						strcpy(strstr(argv[5],".txt"),".pgm");
+						depth_buffer_pgm = fopen(argv[5],"w");
+						fprintf(depth_buffer_pgm,"P5\n%d %d\n255\n",width,height);
+						max_depth = depth_buffer[0].z;
+						min_depth = depth_buffer[0].z;
+						for (int i=1;i<width*height;i++) {
+							if (depth_buffer[i].z > max_depth)
+								max_depth = depth_buffer[i].z;
+							if (depth_buffer[i].z < min_depth)
+								min_depth = depth_buffer[i].z;
+						}
+						depth_scale = 255.0 / (max_depth - min_depth); 
+						for (int i=0;i<width*height;i++) {
+							unsigned char c = (unsigned char) ((depth_buffer[i].z-min_depth) * depth_scale);
+							fwrite(&c,1,1,depth_buffer_pgm);
+						}
+						fclose(depth_buffer_pgm);
 						break;
 						default:
 						break;
 					}
-					Show3DProjection(&ppm,site,cam);
+					Show3DProjection(&ppm,site,cam,depth_buffer);
 					imgcpy(ppm,screen);
 					SDL_Flip(screen);
 					break;
 				case SDL_MOUSEBUTTONDOWN:
-					fillImage(&ppm);
+					fillImage(&ppm,depth_buffer);
 					imgcpy(ppm,screen);
 					SDL_Flip(screen);
 					break;
@@ -401,9 +444,9 @@ int main(int argc,char* argv[]) {
 		}
 		usleep(1000);
 	}
-	writePPM(argv[2],ppm.data,ppm.width,ppm.height);
 
 	delete[] ppm.data;
+	delete[] depth_buffer;
 	free(site->float_data);
 	free(site->color_data);
 

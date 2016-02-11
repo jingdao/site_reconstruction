@@ -105,14 +105,14 @@ void imgcpy(Image image,SDL_Surface* surf) {
 	}
 }
 
-void showRightImage(int index,List* matches,Image rightimage) {
+bool showRightImage(int index,List* matches,Image rightimage) {
 	char buffer[128];
 	char filename[128];
 	sprintf(filename,"%d.match",index);
 	FILE* key_match = fopen(filename,"r");
 	if (!key_match) {
 		printf("Cannot open %s\n",filename);
-		return;
+		return false;
 	}
 	matches->size=0;
 	while (fgets(buffer,128,key_match)) {
@@ -140,6 +140,7 @@ void showRightImage(int index,List* matches,Image rightimage) {
 	}
 	imgcpy(rightimage,rightscreen);
 	fclose(ppm);
+	return true;
 }
 
 void findCorrespondence(List matches,SDL_Rect rect) {
@@ -167,9 +168,9 @@ void findCorrespondence(List matches,SDL_Rect rect) {
 	}
 	qsort(xl.data,xl.size,sizeof(float),compare_float);
 	qsort(yl.data,yl.size,sizeof(float),compare_float);
-	float x_med = (((float*)xl.data)[xl.size/2] - cx) / width;
-	float y_med = (((float*)yl.data)[yl.size/2] - cy) / height;
-	fprintf(target_point,"%f %f\n",x_med,y_med);
+	float x_med = ((float*)xl.data)[xl.size/2];
+	float y_med = ((float*)yl.data)[yl.size/2];
+	fprintf(target_point,"%f %f %d\n",x_med,y_med,xl.size);
 	free(xl.data);
 	free(yl.data);
 }
@@ -177,7 +178,7 @@ void findCorrespondence(List matches,SDL_Rect rect) {
 int main(int argc, char* argv[]) {
 
 	if (argc < 2) {
-		printf("./match_image target_point.txt target.pgm\n");
+		printf("./match_image target_point.txt target.pgm [0.pgm ..]\n");
 		return 1;
 	}
 
@@ -232,17 +233,25 @@ int main(int argc, char* argv[]) {
 				case SDL_KEYDOWN:
 					switch( event.key.keysym.sym ){
 						case 'b':
-						showRightImage(targetIndex--,&matches,rightimage);
-						findCorrespondence(matches,currentRect);
-						SDL_BlitSurface(rightscreen,NULL,screen,&rightrect);
-						SDL_Flip(screen);
+						if (showRightImage(targetIndex--,&matches,rightimage)) {
+							findCorrespondence(matches,currentRect);
+							SDL_BlitSurface(rightscreen,NULL,screen,&rightrect);
+							SDL_Flip(screen);
+						}
 						break;
 						case 'n':
-						showRightImage(targetIndex++,&matches,rightimage);
-						findCorrespondence(matches,currentRect);
-						SDL_BlitSurface(rightscreen,NULL,screen,&rightrect);
-						SDL_Flip(screen);
+						if (showRightImage(targetIndex++,&matches,rightimage)) {
+							findCorrespondence(matches,currentRect);
+							SDL_BlitSurface(rightscreen,NULL,screen,&rightrect);
+							SDL_Flip(screen);
+						}
 						break;
+						case 'm':
+						while (showRightImage(targetIndex++,&matches,rightimage)) {
+							findCorrespondence(matches,currentRect);
+							SDL_BlitSurface(rightscreen,NULL,screen,&rightrect);
+							SDL_Flip(screen);
+						}
 						default:
 						break;
 					}
