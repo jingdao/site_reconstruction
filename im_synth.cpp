@@ -314,7 +314,7 @@ void imgcpy(Image image,SDL_Surface* surf) {
 int main(int argc,char* argv[]) {
 
 	if (argc < 6) {
-		printf("./im_synth width height scenario.pcd site.ppm depth_buffer.txt\n");
+		printf("./im_synth scenario.pcd width height site.ppm depth_buffer.txt\n");
 		return 1;
 	}
 

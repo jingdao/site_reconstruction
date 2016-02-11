@@ -26,6 +26,10 @@ int main(int argc, char* argv[]) {
 	std::vector<int> match_target;
 	std::vector<Point> depth_buffer;
 	FILE* target_point = fopen(argv[3],"r");
+	if (!target_point) {
+		printf("Cannot open %s\n",argv[3]);
+		return 1;
+	}
 	while (fgets(buffer,128,target_point)) {
 		float x,y;
 		int numMatch;
@@ -38,6 +42,10 @@ int main(int argc, char* argv[]) {
 	fclose(target_point);
 
 	FILE* depth_buffer_txt = fopen(argv[4],"r");
+	if (!depth_buffer_txt) {
+		printf("Cannot open %s\n",argv[4]);
+		return 1;
+	}
 	while (fgets(buffer,128,depth_buffer_txt)) {
 		Point p;
 		if (sscanf(buffer,"%f %f %f",&p.x,&p.y,&p.z)==3)

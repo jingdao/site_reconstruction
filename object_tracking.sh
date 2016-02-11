@@ -10,9 +10,9 @@ then
 	exit
 fi
 
-generate_site=false
-generate_images=false
-generate_descriptors=false
+generate_site=true
+generate_images=true
+generate_descriptors=true
 generate_target=true
 
 image_dir=$1
@@ -29,7 +29,7 @@ then
 	j=0
 	for f in `ls $image_dir/*.JPG | sort`
 	do
-		convert -resize 600x400\! $f $output_dir/$j.ppm
+		convert -resize "$width"x"$height"\! $f $output_dir/$j.ppm
 		convert $output_dir/$j.ppm $output_dir/$j.pgm
 		((j++))
 	done
@@ -38,7 +38,7 @@ fi
 if $generate_site
 then
 	rm $output_dir/site*
-	./im_synth $width $height $scenario $output_dir/site.ppm $output_dir/depth_buffer.txt
+	./im_synth $scenario $width $height $output_dir/site.ppm $output_dir/depth_buffer.txt
 	convert $output_dir/site.ppm -blur 0x1 $output_dir/site_blur.ppm
 	convert $output_dir/site_blur.ppm $output_dir/site_blur.pgm
 fi
@@ -61,7 +61,7 @@ then
 		((j++))
 	done
 fi
-	
+
 if $generate_target
 then
 	cd $output_dir/
@@ -69,9 +69,8 @@ then
 	rm camera_location.txt
 	$SCRIPT/match_image target_point.txt 0.pgm
 	$SCRIPT/solve_pnp $width $height target_point.txt depth_buffer.txt camera_location.txt
-	cd $SCRIPT 
+	cd $SCRIPT
 fi
 
-#./site_viewer $scenario $object $output_dir/camera_location.txt
-	
+./site_viewer $scenario $object $output_dir/camera_location.txt
 

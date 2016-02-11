@@ -92,7 +92,7 @@ Point transformPoint(Point p,float* R,float* T) {
 }
 
 bool isValid(int index) {
-	return location_error[index]>=0 && location_error[index]<=10 && match_target[index] > 2;
+	return location_error[index]>=0 && location_error[index]<=10 && match_target[index] > 0;
 }
 
 PCD* NewPCD(const char* fileName, Box* box) {
