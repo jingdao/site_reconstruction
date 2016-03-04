@@ -244,7 +244,7 @@ void translatePCD(PCD* pcd,float dx,float dy,float dz) {
 
 int main(int argc,char* argv[]) {
 	if (argc < 4) {
-		printf("./site_viewer scenario.pcd object.pcd camera_location.txt\n");
+		printf("./site_viewer scenario.pcd object.pcd camera_location.txt [cam_settings.txt]\n");
 		return 1;
 	}
 
@@ -301,6 +301,28 @@ int main(int argc,char* argv[]) {
 	}
 	printf("Loaded %lu reference cameras\n",camera_location.size());
 	fclose(ref_camera_loc);
+
+	if (argc > 4) {
+		FILE* cam_settings = fopen(argv[4],"r");
+		if (cam_settings) {
+			float yaw,pitch,roll;
+			float R[9];
+			float T[3] = {0,0,0};
+			Point upVector = {0,0,1};
+			Point centerVector = {0,1,0};
+			fscanf(cam_settings,"%lf %lf %lf %f %f %f",&cameraX,&cameraY,&cameraZ,&yaw,&pitch,&roll);
+			rotationFromAngle(R,0,0,yaw);
+			upVector = transformPoint(upVector,R,T);
+			centerVector = transformPoint(centerVector,R,T);
+			upX = upVector.x;
+			upY = upVector.y;
+			upZ = upVector.z;
+			centerX = cameraX + centerVector.x;
+			centerY = cameraY + centerVector.y;
+			centerZ = cameraZ + centerVector.z;
+			fclose(cam_settings);
+		}
+	}
 
 	SDL_Init(SDL_INIT_VIDEO);
 	SDL_WM_SetCaption("Point Cloud", NULL);

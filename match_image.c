@@ -192,7 +192,9 @@ int main(int argc, char* argv[]) {
 		return 1;
 	}
 	fgets(buffer,128,ppm); //P5 or P6
-	fgets(buffer,128,ppm);
+	do {
+		fgets(buffer,128,ppm);
+	} while (buffer[0]=='#'); //remove comments
 	char *c = buffer;
 	width = strtol(c,&c,10);
 	height = strtol(c,&c,10);

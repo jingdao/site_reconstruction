@@ -314,7 +314,7 @@ void imgcpy(Image image,SDL_Surface* surf) {
 int main(int argc,char* argv[]) {
 
 	if (argc < 6) {
-		printf("./im_synth scenario.pcd width height site.ppm depth_buffer.txt\n");
+		printf("./im_synth scenario.pcd width height site.ppm depth_buffer.txt [cam_settings.txt]\n");
 		return 1;
 	}
 
@@ -333,10 +333,19 @@ int main(int argc,char* argv[]) {
 	FILE* depth_buffer_txt, *depth_buffer_pgm;
 
 	Camera cam = {
-		{0,30,40,30},
+		{0,5,-10,245},
 		{0,0,0,0},
-		600,130,205,0
+		600,120,350,0
 	};
+	if (argc > 6) {
+		FILE* cam_settings = fopen(argv[6],"r");
+		if (cam_settings) {
+			fscanf(cam_settings,"%f %f %f %f %f %f",
+				&cam.position.i,&cam.position.j,&cam.position.k,
+				&cam.yaw,&cam.pitch,&cam.roll);
+			fclose(cam_settings);
+		}
+	}
 	cam.rotation = quaternionFromAngle(cam.pitch,cam.roll,cam.yaw);
 
 	SDL_Init(SDL_INIT_VIDEO);
@@ -346,7 +355,8 @@ int main(int argc,char* argv[]) {
 	SDL_Flip(screen);
 
 	SDL_Event event;
-	while (true) {
+	bool active=true;
+	while (active) {
 		while (SDL_PollEvent(&event)) {
 			switch(event.type){
 				case SDL_KEYDOWN:
@@ -438,13 +448,22 @@ int main(int argc,char* argv[]) {
 				case SDL_MOUSEBUTTONUP:
 					break;
 				case SDL_QUIT:
-					exit(0);
+					active=false;
 					break;
 			}
 		}
 		usleep(1000);
 	}
 
+	if (argc > 6) {
+		FILE* cam_settings = fopen(argv[6],"w");
+		if (cam_settings) {
+			fprintf(cam_settings,"%f %f %f %f %f %f\n",
+				cam.position.i,cam.position.j,cam.position.k,
+				cam.yaw,cam.pitch,cam.roll);
+			fclose(cam_settings);
+		}
+	}
 	delete[] ppm.data;
 	delete[] depth_buffer;
 	free(site->float_data);

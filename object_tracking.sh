@@ -25,7 +25,7 @@ object=$4
 width=600
 height=400
 ref_index=4
-match_threshold=0.9
+match_threshold=0.7
 FEATURE=$SCRIPT/cvFeatures.py
 
 if $generate_images
@@ -44,7 +44,7 @@ fi
 if $generate_site
 then
 	rm $output_dir/site*
-	$SCRIPT/im_synth $scenario $width $height $output_dir/site.ppm $output_dir/depth_buffer.txt
+	$SCRIPT/im_synth $scenario $width $height $output_dir/site.ppm $output_dir/depth_buffer.txt $output_dir/cam_settings.txt
 	convert $output_dir/site.ppm -blur 0x1 $output_dir/site_blur.ppm
 	convert $output_dir/site_blur.ppm $output_dir/site_blur.pgm
 fi
@@ -92,6 +92,6 @@ fi
 
 if $view_result
 then
-	$SCRIPT/site_viewer $scenario $object $output_dir/camera_location.txt
+	$SCRIPT/site_viewer $scenario $object $output_dir/camera_location.txt $output_dir/cam_settings.txt
 fi
 
