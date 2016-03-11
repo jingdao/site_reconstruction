@@ -143,36 +143,41 @@ bool showRightImage(int index,List* matches,Image rightimage) {
 	return true;
 }
 
-void findCorrespondence(List matches,SDL_Rect rect) {
-	if (rect.w <= 0 || rect.h <= 0)
-		return;
+void findCorrespondence(List matches,List rl) {
 	Match* m = (Match*)matches.data;
 	Color red = {255,0,0};
-	List xl = {0,8,NULL};
-	List yl = {0,8,NULL};
-	xl.data = malloc(8*sizeof(float));
-	yl.data = malloc(8*sizeof(float));
-	for (int i=0;i<matches.size;i++) {
-		if (m[i].x1 > rect.x && m[i].x1 < rect.x + rect.w &&
-			m[i].y1 > rect.y && m[i].y1 < rect.y + rect.h) {
-			drawKeyPoint(rightscreen,m[i].x2,m[i].y2,red);
-			if (xl.size == xl.capacity) {
-				xl.data = realloc(xl.data,xl.capacity*2*sizeof(float));
-				xl.capacity *= 2;
-				yl.data = realloc(yl.data,yl.capacity*2*sizeof(float));
-				yl.capacity *= 2;
+	fprintf(target_point,"%d ",rl.size);
+	for (int j=0;j<rl.size;j++) {
+		SDL_Rect rect = ((SDL_Rect*)rl.data)[j];
+		if (rect.w <= 0 || rect.h <= 0)
+			continue;
+		List xl = {0,8,NULL};
+		List yl = {0,8,NULL};
+		xl.data = malloc(8*sizeof(float));
+		yl.data = malloc(8*sizeof(float));
+		for (int i=0;i<matches.size;i++) {
+			if (m[i].x1 > rect.x && m[i].x1 < rect.x + rect.w &&
+				m[i].y1 > rect.y && m[i].y1 < rect.y + rect.h) {
+				drawKeyPoint(rightscreen,m[i].x2,m[i].y2,red);
+				if (xl.size == xl.capacity) {
+					xl.data = realloc(xl.data,xl.capacity*2*sizeof(float));
+					xl.capacity *= 2;
+					yl.data = realloc(yl.data,yl.capacity*2*sizeof(float));
+					yl.capacity *= 2;
+				}
+				((float*)xl.data)[xl.size++] = m[i].x2;
+				((float*)yl.data)[yl.size++] = m[i].y2;
 			}
-			((float*)xl.data)[xl.size++] = m[i].x2;
-			((float*)yl.data)[yl.size++] = m[i].y2;
 		}
+		qsort(xl.data,xl.size,sizeof(float),compare_float);
+		qsort(yl.data,yl.size,sizeof(float),compare_float);
+		float x_med = ((float*)xl.data)[xl.size/2];
+		float y_med = ((float*)yl.data)[yl.size/2];
+		fprintf(target_point,"%f %f %d ",x_med,y_med,xl.size);
+		free(xl.data);
+		free(yl.data);
 	}
-	qsort(xl.data,xl.size,sizeof(float),compare_float);
-	qsort(yl.data,yl.size,sizeof(float),compare_float);
-	float x_med = ((float*)xl.data)[xl.size/2];
-	float y_med = ((float*)yl.data)[yl.size/2];
-	fprintf(target_point,"%f %f %d\n",x_med,y_med,xl.size);
-	free(xl.data);
-	free(yl.data);
+	fprintf(target_point,"\n");
 }
 
 int main(int argc, char* argv[]) {
@@ -219,8 +224,10 @@ int main(int argc, char* argv[]) {
 	fclose(ppm);
 	Color yellow = {255,255,0};
 	List matches = {0,8,NULL};
-	SDL_Rect currentRect = {0,0,0,0};
+	List rectList = {0,8,NULL};
 	matches.data = malloc(8*sizeof(Match));
+	rectList.data = calloc(8,sizeof(SDL_Rect));
+	SDL_Rect* currentRect = rectList.data;
 
 	imgcpy(leftimage,leftscreen);
 	SDL_BlitSurface(leftscreen,NULL,screen,&leftrect);
@@ -236,24 +243,29 @@ int main(int argc, char* argv[]) {
 					switch( event.key.keysym.sym ){
 						case 'b':
 						if (showRightImage(targetIndex--,&matches,rightimage)) {
-							findCorrespondence(matches,currentRect);
 							SDL_BlitSurface(rightscreen,NULL,screen,&rightrect);
 							SDL_Flip(screen);
 						}
 						break;
 						case 'n':
 						if (showRightImage(targetIndex++,&matches,rightimage)) {
-							findCorrespondence(matches,currentRect);
 							SDL_BlitSurface(rightscreen,NULL,screen,&rightrect);
 							SDL_Flip(screen);
 						}
 						break;
 						case 'm':
+						findCorrespondence(matches,rectList);
+						SDL_BlitSurface(rightscreen,NULL,screen,&rightrect);
+						SDL_Flip(screen);
+						break;
+						case 'v':
+						findCorrespondence(matches,rectList);
 						while (showRightImage(targetIndex++,&matches,rightimage)) {
-							findCorrespondence(matches,currentRect);
+							findCorrespondence(matches,rectList);
 							SDL_BlitSurface(rightscreen,NULL,screen,&rightrect);
 							SDL_Flip(screen);
 						}
+						break;
 						default:
 						break;
 					}
@@ -263,13 +275,15 @@ int main(int argc, char* argv[]) {
 						mouseDrag = true;
 						previousX = event.button.x;
 						previousY = event.button.y;
+						rectList.size++;
 					}
 					break;
 				case SDL_MOUSEMOTION:
 					if (mouseDrag) {
 						imgcpy(leftimage,leftscreen);
-						currentRect = getVarRect(previousX,previousY,event.motion.x,event.motion.y);
-						drawRect(leftscreen,currentRect,yellow);
+						*currentRect = getVarRect(previousX,previousY,event.motion.x,event.motion.y);
+						for (int i=0;i<rectList.size;i++)
+							drawRect(leftscreen,((SDL_Rect*)rectList.data)[i],yellow);
 						SDL_BlitSurface(leftscreen,NULL,screen,&leftrect);
 						SDL_Flip(screen);
 					}
@@ -279,13 +293,13 @@ int main(int argc, char* argv[]) {
 					SDL_BlitSurface(rightscreen,NULL,screen,&rightrect);
 					if (mouseDrag) {
 						mouseDrag = false;
-						findCorrespondence(matches,currentRect);
 						SDL_BlitSurface(rightscreen,NULL,screen,&rightrect);
+						currentRect++;
 					} else {
 						imgcpy(leftimage,leftscreen);
 						SDL_BlitSurface(leftscreen,NULL,screen,&leftrect);
-						currentRect.w = 0;
-						currentRect.h = 0;
+						currentRect->w = 0;
+						currentRect->h = 0;
 					}
 					SDL_Flip(screen);
 					break;

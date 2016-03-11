@@ -5,28 +5,31 @@ SIFT=/home/jd/Downloads/siftDemoV4/sift
 ORIGIN=`pwd`
 SCRIPT=/home/jd/Documents/site_reconstruction
 
-if [ "$#" -ne "4" ] || ! [ -d $1 ] || ! [ -d $2 ] || ! [ -f $3 ] || ! [ -f $4 ]
+if [ "$#" -ne "3" ] || ! [ -d $1 ] || ! [ -d $2 ] || ! [ -f $3 ]
 then
-	echo "./object_tracking.sh image_dir/ output_dir/ scenario.pcd object.pcd"
+	echo "./object_tracking.sh image_dir/ output_dir/ scenario.pcd"
 	exit
 fi
 
-generate_site=true
-generate_images=true
-generate_descriptors=true
-generate_target=true
-view_result=false
-use_sift=false
+generate_site=false
+generate_images=false
+generate_descriptors=false
+generate_target=false
+view_result=true
+use_sift=true
 
 image_dir=$1
 output_dir=$2
 scenario=$3
-object=$4
+object=$output_dir/object.txt
 width=600
 height=400
-ref_index=4
-match_threshold=0.7
+ref_index=2
+match_threshold=0.8
 FEATURE=$SCRIPT/cvFeatures.py
+
+cloud_dir=`dirname $scenario`
+echo -e "$cloud_dir/van2.pcd 0 0 0\n$cloud_dir/truck3.pcd 0 0 60\n" > $object
 
 if $generate_images
 then
@@ -92,6 +95,6 @@ fi
 
 if $view_result
 then
-	$SCRIPT/site_viewer $scenario $object $output_dir/camera_location.txt $output_dir/cam_settings.txt
+	$SCRIPT/site_viewer $scenario $object $output_dir/camera_location.txt
 fi
 
