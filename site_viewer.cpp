@@ -6,7 +6,7 @@
 #include <GL/gl.h>
 #include <GL/glu.h>
 #include <vector>
-#define DEBUG 1
+#define DEBUG 0
 #define DRAW_TRAJECTORY 0
 
 struct PCD {
@@ -175,7 +175,6 @@ void drawLine(Point p1,Point p2) {
 
 void drawBox(Box b) {
 	glLineWidth(3.0);
-	glColor3ub(0,255,0);
 	glBegin(GL_LINES);
 
 	glVertex3d(b.minX,b.minY,b.minZ);
@@ -232,7 +231,7 @@ void draw() {
 	glBegin(GL_POINTS);
 	if (location_index == 0)
 		glColor3ub(255,255,0);
-	else if (location_error[location_index-1] < 0 || match_target[location_index-1] <=2)
+	else if (location_error[location_index-1] < 0 || match_target[location_index-1] <=1)
 		glColor3ub(255,0,0);
 	else {
 		double intensity = 255.0 / ((int)location_error[location_index-1] + 1);
@@ -246,8 +245,13 @@ void draw() {
 		}
 	}
 	glEnd();
-	for (size_t i=0;i<object_box.size();i++)
+	for (size_t i=0;i<object_box.size();i++) {
+		if (location_error[location_index-object_box.size()+i] < 0 || match_target[location_index-object_box.size()+i] <=2)
+			glColor3ub(255,0,0);
+		else
+			glColor3ub(0,255,0);
 		drawBox(object_box[i]);
+	}
 
 	glLineWidth(1.0);
 	glColor3ub(0,255,0);
@@ -493,7 +497,7 @@ int main(int argc,char* argv[]) {
 						for (int i=0;i<numObjects;i++) {
 							if (location_index >= object_location.size())
 								location_index = 0;
-							printf("location_index: %d error: %f\n",location_index,location_error[location_index]);
+							printf("location_index: %d error: %f %d\n",location_index,location_error[location_index],match_target[location_index]);
 							if (isValid(location_index)) {
 								current_location[i] = object_location[location_index];
 								trajectory.push_back(current_location[i]);
