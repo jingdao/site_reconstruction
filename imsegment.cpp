@@ -9,6 +9,7 @@
 #include <SDL/SDL.h>
 #define K_PARAM 3
 #define EXPAND 1.5
+#define OUTLIER_RATIO 0.05
 
 SDL_Surface *screen;
 bool mouseDrag = false;
@@ -188,6 +189,54 @@ int getDiff(Color c1, Color c2) {
 	d += (c1.g - c2.g) * (c1.g - c2.g);
 	d += (c1.b - c2.b) * (c1.b - c2.b);
 	return d;
+}
+
+int sortByX(const void* v1, const void* v2) {
+	Coordinate* c1 = (Coordinate*)v1;
+	Coordinate* c2 = (Coordinate*)v2;
+	return c1->x - c2->x;
+}
+
+int sortByY(const void* v1, const void* v2) {
+	Coordinate* c1 = (Coordinate*)v1;
+	Coordinate* c2 = (Coordinate*)v2;
+	return c1->y - c2->y;
+}
+
+int sortByXY(const void* v1, const void* v2) {
+	Coordinate* c1 = (Coordinate*)v1;
+	Coordinate* c2 = (Coordinate*)v2;
+	if (c1->x == c2->x)
+		return c1->y - c2->y;
+	else
+		return c1->x - c2->x;
+}
+
+int cross(Coordinate O, Coordinate A, Coordinate B) {
+	return (A.x - O.x) * (B.y - O.y) - (A.y - O.y) * (B.x - O.x);
+}
+
+std::vector<Coordinate> convexHull(std::vector<Coordinate> P) {
+	int n = P.size(), k = 0;
+	std::vector<Coordinate> H(2*n);
+
+	// Sort points lexicographically
+	qsort(P.data(),n,sizeof(Coordinate),sortByXY);
+
+	// Build lower hull
+	for (int i = 0; i < n; ++i) {
+		while (k >= 2 && cross(H[k-2], H[k-1], P[i]) <= 0) k--;
+		H[k++] = P[i];
+	}
+
+	// Build upper hull
+	for (int i = n-2, t = k+1; i >= 0; i--) {
+		while (k >= t && cross(H[k-2], H[k-1], P[i]) <= 0) k--;
+		H[k++] = P[i];
+	}
+
+	H.resize(k-1);
+	return H;
 }
 
 unsigned char getThreshold(Image image, SDL_Rect* rect) {
@@ -497,6 +546,61 @@ void colorRegionInBox(Image image, std::vector<Coordinate> *region, float* box, 
 
 }
 
+void floodFillRegion(Image image, std::vector<Coordinate> *region, SDL_Rect* rect, Color* palette, int k, int targetID) {
+	region->clear();
+	bool** visited = new bool*[rect->w];
+	for (int i=0;i<rect->w;i++)
+		visited[i] = new bool[rect->h]();
+	for (int i=0;i<rect->h;i++) {
+		for (int j=0;j<rect->w;j++) {
+			if (visited[j][i])
+				continue;
+			std::vector<Coordinate> marked;
+			std::vector<Coordinate> stack;
+			Coordinate p = {j+rect->x,i+rect->y};
+			stack.push_back(p);
+			while (stack.size() > 0) {
+				Coordinate c = stack.back();
+				int dx = c.x - rect->x;
+				int dy = c.y - rect->y;
+				stack.pop_back();
+				if (dx < 0 || dx >= rect->w || dy < 0 || dy >= rect->h)
+					continue;
+				if (visited[dx][dy])
+					continue;
+				visited[dx][dy] = true;
+				Color q;
+				q.r = image.data[(c.y*image.width+c.x)*3];
+				q.g = image.data[(c.y*image.width+c.x)*3+1];
+				q.b = image.data[(c.y*image.width+c.x)*3+2];
+				int minD=255*255*3,minID;
+				for (int l=0;l<k;l++) {
+					int d = getDiff(q,palette[l]);
+					if (d < minD) {
+						minD = d;
+						minID = l;
+					}
+				}
+				if (minID == targetID) {
+					marked.push_back(c);
+					for (int m = -2; m<= 2; m++) {
+						for (int n = -2; n <= 2; n++) {
+							Coordinate r = {c.x + m, c.y + n};
+							stack.push_back(r);
+						}
+					}
+				}
+			}
+			if (marked.size() > region->size())
+				*region = marked;
+		}
+	}
+	for (int i=0;i<rect->w;i++)
+		delete[] visited[i];
+	delete[] visited;
+
+}
+
 void highlightRegion(SDL_Surface *surf, std::vector<Coordinate> *region, Color color) {
 	for (size_t i=0;i<region->size();i++) {
 		unsigned char* c = (unsigned char*)surf->pixels + region->at(i).y * surf->pitch + region->at(i).x*3;
@@ -625,15 +729,19 @@ void mooreTracing(Image image, std::vector<Coordinate> *region, SDL_Rect *rect) 
 void getPCA(std::vector<Coordinate> *cloud, float *box) {
 	if (cloud->size() == 0)
 		return;
+	qsort(cloud->data(),cloud->size(),sizeof(Coordinate),sortByX);
+	qsort(cloud->data()+(int)(cloud->size()*OUTLIER_RATIO),
+			cloud->size()-(int)(cloud->size()*OUTLIER_RATIO),sizeof(Coordinate),sortByY);
+	int inlier_size = cloud->size() - (int)(cloud->size()*OUTLIER_RATIO*4);
 	double cov[4] = {}; //column major
 	Coordinate center = {};
-	for (int i = 0; i < cloud->size(); i++) {
+	for (int i = cloud->size()*OUTLIER_RATIO*2; i < cloud->size()-(int)(cloud->size()*OUTLIER_RATIO*2); i++) {
 		center.x += cloud->at(i).x;
 		center.y += cloud->at(i).y;
 	}
-	center.x /= cloud->size(); 
-	center.y /= cloud->size();
-	for (int j = 0; j<cloud->size(); j++) {
+	center.x /= inlier_size; 
+	center.y /= inlier_size;
+	for (int j = cloud->size()*OUTLIER_RATIO*2; j<cloud->size()-(int)(cloud->size()*OUTLIER_RATIO*2); j++) {
 		float deltaP[2] = {
 			(float) cloud->at(j).x- center.x,
 			(float) cloud->at(j).y- center.y,
@@ -643,10 +751,10 @@ void getPCA(std::vector<Coordinate> *cloud, float *box) {
 		cov[2] += deltaP[0] * deltaP[1];
 		cov[3] += deltaP[1] * deltaP[1];
 	}
-	cov[0] /= cloud->size() * cloud->size();
-	cov[1] /= cloud->size() * cloud->size();
-	cov[2] /= cloud->size() * cloud->size();
-	cov[3] /= cloud->size() * cloud->size();
+	cov[0] /= inlier_size * inlier_size;
+	cov[1] /= inlier_size * inlier_size;
+	cov[2] /= inlier_size * inlier_size;
+	cov[3] /= inlier_size * inlier_size;
 	float trace = cov[0] + cov[3];
 	float det = cov[0] * cov[3] - cov[1] * cov[2];
 	float L1 = trace / 2 + sqrt(trace*trace / 4 - det);
@@ -672,14 +780,14 @@ void getPCA(std::vector<Coordinate> *cloud, float *box) {
 	v[2] /= m1;
 	v[1] /= m2;
 	v[3] /= m2;
-	for (int j = 0; j<cloud->size(); j++) {
+	for (int j = cloud->size()*OUTLIER_RATIO*2; j<cloud->size()-(int)(cloud->size()*OUTLIER_RATIO*2); j++) {
 		for (int i = 0; i<2; i++) {
 			float dotProduct =
 				cloud->at(j).x * v[i * 2] +
 				cloud->at(j).y * v[i * 2 + 1];
-			if (j == 0 || dotProduct < minScale[i])
+			if (j == (int)(cloud->size()*OUTLIER_RATIO*2) || dotProduct < minScale[i])
 				minScale[i] = dotProduct;
-			if (j == 0 || dotProduct > maxScale[i])
+			if (j == (int)(cloud->size()*OUTLIER_RATIO*2) || dotProduct > maxScale[i])
 				maxScale[i] = dotProduct;
 		}
 	}
@@ -697,6 +805,42 @@ void getPCA(std::vector<Coordinate> *cloud, float *box) {
 				coords[j] += sign * (maxScale[axis]-minScale[axis]) / 2 * v[axis * 2 + j];
 			}
 			box[i*2 + j] = coords[j];
+		}
+	}
+}
+
+void minBoundRect(std::vector<Coordinate> *cloud, float *box) {
+	if (cloud->size() == 0)
+		return;
+	std::vector<float> edgeAngles;
+	for (size_t i=0;i<cloud->size()-1;i++) {
+		float theta = atan2(cloud->at(i+1).y-cloud->at(i).y,cloud->at(i+1).x-cloud->at(i).x);
+		edgeAngles.push_back(theta);
+	}
+	float minArea;
+	for (size_t i=0;i<edgeAngles.size();i++) {
+		float theta = edgeAngles[i];
+		float R[4] = {(float)cos(theta), (float)sin(theta), (float)-sin(theta), (float)cos(theta)};
+		float xmin,xmax,ymin,ymax;
+		for (size_t j=0;j<cloud->size();j++) {
+			float x = R[0] * cloud->at(j).x + R[1] * cloud->at(j).y;
+			float y = R[2] * cloud->at(j).x + R[3] * cloud->at(j).y;
+			if (j==0 || x < xmin) xmin = x;
+			if (j==0 || x > xmax) xmax = x;
+			if (j==0 || y < ymin) ymin = y;
+			if (j==0 || y > ymax) ymax = y;
+		}
+		float area = (xmax-xmin) * (ymax-ymin);
+		if (i==0 || area < minArea) {
+			minArea = area;
+			box[0] = R[0] * xmin + R[2] * ymin;
+			box[1] = R[1] * xmin + R[3] * ymin;
+			box[2] = R[0] * xmax + R[2] * ymin;
+			box[3] = R[1] * xmax + R[3] * ymin;
+			box[4] = R[0] * xmin + R[2] * ymax;
+			box[5] = R[1] * xmin + R[3] * ymax;
+			box[6] = R[0] * xmax + R[2] * ymax;
+			box[7] = R[1] * xmax + R[3] * ymax;
 		}
 	}
 }
@@ -911,9 +1055,12 @@ int main(int argc, char* argv[]) {
 						float* currentBox = box.data() + box.size() - 8;
 						getKMeans(labimage,&currentRect,currentPalette,K_PARAM);
 						targetList.push_back(findTargetColor(labimage,&currentRect,currentPalette,K_PARAM));
-						colorRegion(labimage,currentRegion,&currentRect,currentPalette,K_PARAM,targetList.back());
+//						colorRegion(labimage,currentRegion,&currentRect,currentPalette,K_PARAM,targetList.back());
+						floodFillRegion(labimage,currentRegion,&currentRect,currentPalette,K_PARAM,targetList.back());
 						highlightRegion(screen,currentRegion,red);
-						getPCA(currentRegion,currentBox);
+						*currentRegion = convexHull(*currentRegion);
+//						getPCA(currentRegion,currentBox);
+						minBoundRect(currentRegion,currentBox);
 						drawBox(screen,currentBox,red);
 					} else {
 						imgcpy(baseimage,screen);
