@@ -7,15 +7,14 @@
 #include <vector>
 #include <algorithm>
 #include <SDL/SDL.h>
-#define K_PARAM 3
-#define EXPAND 1.5
+#define K_PARAM 5
+#define EXPAND 2.0
 #define OUTLIER_RATIO 0.05
 
 SDL_Surface *screen;
 bool mouseDrag = false;
 int previousX,previousY;
 int targetIndex = 1;
-float cx,cy;
 
 typedef struct {
 	int width,height;
@@ -219,6 +218,8 @@ int cross(Coordinate O, Coordinate A, Coordinate B) {
 std::vector<Coordinate> convexHull(std::vector<Coordinate> P) {
 	int n = P.size(), k = 0;
 	std::vector<Coordinate> H(2*n);
+	if (n==0)
+		return H;
 
 	// Sort points lexicographically
 	qsort(P.data(),n,sizeof(Coordinate),sortByXY);
@@ -601,6 +602,89 @@ void floodFillRegion(Image image, std::vector<Coordinate> *region, SDL_Rect* rec
 
 }
 
+void floodFillRegionInBox(Image image, std::vector<Coordinate> *region, float* box, Color* palette, int k, int targetID) {
+	region->clear();
+	float minX = box[0];
+	float maxX = box[0];
+	float minY = box[1];
+	float maxY = box[1];
+	for (int i=1;i<4;i++) {
+		float x = box[i*2];
+		float y = box[i*2+1];
+		if (x < minX) minX = x;
+		if (x > maxX) maxX = x;
+		if (y < minY) minY = y;
+		if (y > maxY) maxY = y;
+	}
+	if (minX < 0) minX = 0;
+	if (maxX > image.width - 1) maxX = image.width - 1;
+	if (minY < 0) minY = 0;
+	if (maxY > image.height - 1) maxY = image.height - 1;
+	float ux = box[2] - box[0];
+	float uy = box[3] - box[1];
+	float vx = box[4] - box[0];
+	float vy = box[5] - box[1];
+	float mu = ux*ux + uy*uy;
+	float mv = vx*vx + vy*vy;
+	int width = (int)maxX - (int)minX;
+	int height = (int)maxY - (int)minY;
+	bool** visited = new bool*[width];
+	for (int i=0;i<width;i++)
+		visited[i] = new bool[height]();
+	for (int i=0;i<height;i++) {
+		for (int j=0;j<width;j++) {
+			if (visited[j][i])
+				continue;
+			std::vector<Coordinate> marked;
+			std::vector<Coordinate> stack;
+			Coordinate p = {j+(int)minX,i+(int)minY};
+			stack.push_back(p);
+			while (stack.size() > 0) {
+				Coordinate c = stack.back();
+				stack.pop_back();
+				int dx = c.x - (int)minX;
+				int dy = c.y - (int)minY;
+				if (dx < 0 || dx >= width || dy < 0 || dy >= height)
+					continue;
+				if (visited[dx][dy])
+					continue;
+				visited[dx][dy] = true;
+				float wu = ((c.x - box[0])*ux + (c.y - box[1])*uy) / mu;
+				float wv = ((c.x - box[0])*vx + (c.y - box[1])*vy) / mv;
+				if (wu<0 || wu>1 || wv<0 || wv>1)
+					continue;
+				Color q;
+				q.r = image.data[(c.y*image.width+c.x)*3];
+				q.g = image.data[(c.y*image.width+c.x)*3+1];
+				q.b = image.data[(c.y*image.width+c.x)*3+2];
+				int minD=255*255*3,minID;
+				for (int l=0;l<k;l++) {
+					int d = getDiff(q,palette[l]);
+					if (d < minD) {
+						minD = d;
+						minID = l;
+					}
+				}
+				if (minID == targetID) {
+					marked.push_back(c);
+					for (int m = -2; m<= 2; m++) {
+						for (int n = -2; n <= 2; n++) {
+							Coordinate r = {c.x + m, c.y + n};
+							stack.push_back(r);
+						}
+					}
+				}
+			}
+			if (marked.size() > region->size())
+				*region = marked;
+		}
+	}
+	for (int i=0;i<width;i++)
+		delete[] visited[i];
+	delete[] visited;
+
+}
+
 void highlightRegion(SDL_Surface *surf, std::vector<Coordinate> *region, Color color) {
 	for (size_t i=0;i<region->size();i++) {
 		unsigned char* c = (unsigned char*)surf->pixels + region->at(i).y * surf->pitch + region->at(i).x*3;
@@ -809,7 +893,24 @@ void getPCA(std::vector<Coordinate> *cloud, float *box) {
 	}
 }
 
-void minBoundRect(std::vector<Coordinate> *cloud, float *box) {
+void expandBox(float* box, float expand_u, float expand_v) {
+	float x0 = box[0];
+	float y0 = box[1];
+	float ux = box[2] - box[0];
+	float uy = box[3] - box[1];
+	float vx = box[4] - box[0];
+	float vy = box[5] - box[1];
+	box[0] = x0 + (1-expand_u)/2 * ux + (1-expand_v)/2 * vx;
+	box[1] = y0 + (1-expand_u)/2 * uy + (1-expand_v)/2 * vy;
+	box[2] = x0 + (1+expand_u)/2 * ux + (1-expand_v)/2 * vx;
+	box[3] = y0 + (1+expand_u)/2 * uy + (1-expand_v)/2 * vy;
+	box[4] = x0 + (1-expand_u)/2 * ux + (1+expand_v)/2 * vx;
+	box[5] = y0 + (1-expand_u)/2 * uy + (1+expand_v)/2 * vy;
+	box[6] = x0 + (1+expand_u)/2 * ux + (1+expand_v)/2 * vx;
+	box[7] = y0 + (1+expand_u)/2 * uy + (1+expand_v)/2 * vy;
+}
+
+void minBoundRect(std::vector<Coordinate> *cloud, float *box, bool keepSize) {
 	if (cloud->size() == 0)
 		return;
 	std::vector<float> edgeAngles;
@@ -817,6 +918,14 @@ void minBoundRect(std::vector<Coordinate> *cloud, float *box) {
 		float theta = atan2(cloud->at(i+1).y-cloud->at(i).y,cloud->at(i+1).x-cloud->at(i).x);
 		edgeAngles.push_back(theta);
 	}
+	float ux = box[2] - box[0];
+	float uy = box[3] - box[1];
+	float vx = box[4] - box[0];
+	float vy = box[5] - box[1];
+	float mu = sqrt(ux*ux + uy*uy);
+	float mv = sqrt(vx*vx + vy*vy);
+	float scale_u = mu / EXPAND;
+	float scale_v = mv / EXPAND;
 	float minArea;
 	for (size_t i=0;i<edgeAngles.size();i++) {
 		float theta = edgeAngles[i];
@@ -842,6 +951,18 @@ void minBoundRect(std::vector<Coordinate> *cloud, float *box) {
 			box[6] = R[0] * xmax + R[2] * ymax;
 			box[7] = R[1] * xmax + R[3] * ymax;
 		}
+	}
+	if (keepSize) {
+		ux = box[2] - box[0];
+		uy = box[3] - box[1];
+		vx = box[4] - box[0];
+		vy = box[5] - box[1];
+		mu = sqrt(ux*ux + uy*uy);
+		mv = sqrt(vx*vx + vy*vy);
+		if (mu<mv && scale_u<scale_v || mu>mv && scale_u>scale_v)
+			expandBox(box,scale_u / mu, scale_v / mv);
+		else
+			expandBox(box,scale_v / mu, scale_u / mv);
 	}
 }
 
@@ -871,23 +992,6 @@ SDL_Rect boxToRect(SDL_Surface *surf, float *box,float expand) {
 	if (r.x + r.w >= surf->w) r.w = surf->w - 1 - r.x;
 	if (r.y + r.h >= surf->h) r.h = surf->h - 1 - r.y;
 	return r;
-}
-
-void expandBox(float* box, float expand) {
-	float x0 = box[0];
-	float y0 = box[1];
-	float ux = box[2] - box[0];
-	float uy = box[3] - box[1];
-	float vx = box[4] - box[0];
-	float vy = box[5] - box[1];
-	box[0] = x0 + (1-expand)/2 * ux + (1-expand)/2 * vx;
-	box[1] = y0 + (1-expand)/2 * uy + (1-expand)/2 * vy;
-	box[2] = x0 + (1+expand)/2 * ux + (1-expand)/2 * vx;
-	box[3] = y0 + (1+expand)/2 * uy + (1-expand)/2 * vy;
-	box[4] = x0 + (1-expand)/2 * ux + (1+expand)/2 * vx;
-	box[5] = y0 + (1-expand)/2 * uy + (1+expand)/2 * vy;
-	box[6] = x0 + (1+expand)/2 * ux + (1+expand)/2 * vx;
-	box[7] = y0 + (1+expand)/2 * uy + (1+expand)/2 * vy;
 }
 
 bool loadImage(char* name,Image *image,bool color) {
@@ -952,8 +1056,8 @@ int main(int argc, char* argv[]) {
 	convertLAB(labimage);
 	screen = SDL_SetVideoMode(baseimage.width,baseimage.height,24,SDL_SWSURFACE);
 
-	cx = 0.5 * (baseimage.width-1);
-	cy = 0.5 * (baseimage.height-1);
+	float cx = 0.5 * (baseimage.width-1);
+	float cy = 0.5 * (baseimage.height-1);
 
 	Color yellow = {255,255,0};
 	Color red = {255,0,0};
@@ -985,10 +1089,11 @@ int main(int argc, char* argv[]) {
 								Color* currentPalette = palette.data() + i * K_PARAM;
 								std::vector<Coordinate> *currentRegion = region.data() + i;
 								int target = targetList[i];
-								expandBox(currentBox,EXPAND);
-								colorRegionInBox(labimage,currentRegion,currentBox,currentPalette,K_PARAM,target);
+								expandBox(currentBox,EXPAND,EXPAND);
+								floodFillRegionInBox(labimage,currentRegion,currentBox,currentPalette,K_PARAM,target);
 								highlightRegion(screen,currentRegion,red);
-								getPCA(currentRegion,currentBox);
+								*currentRegion = convexHull(*currentRegion);
+								minBoundRect(currentRegion,currentBox,true);
 								drawBox(screen,currentBox,red);
 							}
 							SDL_Flip(screen);
@@ -1005,10 +1110,11 @@ int main(int argc, char* argv[]) {
 								Color* currentPalette = palette.data() + i * K_PARAM;
 								std::vector<Coordinate> *currentRegion = region.data() + i;
 								int target = targetList[i];
-								expandBox(currentBox,EXPAND);
-								colorRegionInBox(labimage,currentRegion,currentBox,currentPalette,K_PARAM,target);
+								expandBox(currentBox,EXPAND,EXPAND);
+								floodFillRegionInBox(labimage,currentRegion,currentBox,currentPalette,K_PARAM,target);
 								highlightRegion(screen,currentRegion,red);
-								getPCA(currentRegion,currentBox);
+								*currentRegion = convexHull(*currentRegion);
+								minBoundRect(currentRegion,currentBox,true);
 								drawBox(screen,currentBox,red);
 							}
 							SDL_Flip(screen);
@@ -1055,12 +1161,10 @@ int main(int argc, char* argv[]) {
 						float* currentBox = box.data() + box.size() - 8;
 						getKMeans(labimage,&currentRect,currentPalette,K_PARAM);
 						targetList.push_back(findTargetColor(labimage,&currentRect,currentPalette,K_PARAM));
-//						colorRegion(labimage,currentRegion,&currentRect,currentPalette,K_PARAM,targetList.back());
 						floodFillRegion(labimage,currentRegion,&currentRect,currentPalette,K_PARAM,targetList.back());
 						highlightRegion(screen,currentRegion,red);
 						*currentRegion = convexHull(*currentRegion);
-//						getPCA(currentRegion,currentBox);
-						minBoundRect(currentRegion,currentBox);
+						minBoundRect(currentRegion,currentBox,false);
 						drawBox(screen,currentBox,red);
 					} else {
 						imgcpy(baseimage,screen);
