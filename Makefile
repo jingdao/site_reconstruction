@@ -21,6 +21,9 @@ im_synth: im_synth.cpp
 solve_pnp: solve_pnp.cpp
 	$(CXX) -ggdb3 -std=c++11 -o $@ $< -lopencv_calib3d -lopencv_core
 
+solve_pnp_2d: solve_pnp_2d.cpp
+	$(CXX) -ggdb3 -std=c++11 -o $@ $<
+
 imsegment: imsegment.cpp
 	$(CXX) -ggdb3 -std=c++11 -o $@ $< -lSDL
 

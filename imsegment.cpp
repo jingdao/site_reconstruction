@@ -14,7 +14,7 @@
 SDL_Surface *screen;
 bool mouseDrag = false;
 int previousX,previousY;
-int targetIndex = 1;
+int targetIndex = 0;
 
 typedef struct {
 	int width,height;
@@ -966,6 +966,16 @@ void minBoundRect(std::vector<Coordinate> *cloud, float *box, bool keepSize) {
 	}
 }
 
+void writeBoxToFile(std::vector<float> *box, FILE* f) {
+	fprintf(f,"%lu",box->size() / 2);
+	for (size_t i=0;i<box->size();i++) {
+		fprintf(f," %f",box->at(i));
+		if (i%2 == 1)
+			fprintf(f," 1");
+	}
+	fprintf(f,"\n");
+}
+
 SDL_Rect boxToRect(SDL_Surface *surf, float *box,float expand) {
 	float minX = box[0];
 	float maxX = box[0];
@@ -1039,8 +1049,8 @@ bool loadImageByIndex(int index, Image *image,bool color) {
 
 int main(int argc, char* argv[]) {
 
-	if (argc < 2) {
-		printf("./match_image target.pgm [1.pgm ..]\n");
+	if (argc < 3) {
+		printf("./match_image target.pgm target_point.txt [1.pgm ..]\n");
 		return 1;
 	}
 	srand(0);
@@ -1068,6 +1078,7 @@ int main(int argc, char* argv[]) {
 	std::vector<Color> palette;
 	std::vector<float> box;
 	std::vector<int> targetList;
+	FILE* target_point = fopen(argv[2],"w");
 
 	imgcpy(baseimage,screen);
 	SDL_Flip(screen);
@@ -1079,7 +1090,7 @@ int main(int argc, char* argv[]) {
 				case SDL_KEYDOWN:
 					switch( event.key.keysym.sym ){
 						case 'b':
-						if (loadImageByIndex(targetIndex--,&baseimage,use_color)) {
+						if (loadImageByIndex(--targetIndex,&baseimage,use_color)) {
 							delete[] labimage.data;
 							labimage = imclone(baseimage);
 							convertLAB(labimage);
@@ -1096,11 +1107,12 @@ int main(int argc, char* argv[]) {
 								minBoundRect(currentRegion,currentBox,true);
 								drawBox(screen,currentBox,red);
 							}
+							writeBoxToFile(&box,target_point);
 							SDL_Flip(screen);
 						}
 						break;
 						case 'n':
-						if (loadImageByIndex(targetIndex++,&baseimage,use_color)) {
+						if (loadImageByIndex(++targetIndex,&baseimage,use_color)) {
 							delete[] labimage.data;
 							labimage = imclone(baseimage);
 							convertLAB(labimage);
@@ -1117,6 +1129,7 @@ int main(int argc, char* argv[]) {
 								minBoundRect(currentRegion,currentBox,true);
 								drawBox(screen,currentBox,red);
 							}
+							writeBoxToFile(&box,target_point);
 							SDL_Flip(screen);
 						}
 						break;
@@ -1186,6 +1199,7 @@ int main(int argc, char* argv[]) {
 		usleep(1000);
 	}
 
+	fclose(target_point);
 	delete[] baseimage.data;
 
 }
