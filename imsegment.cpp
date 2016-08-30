@@ -10,6 +10,7 @@
 #define K_PARAM 5
 #define EXPAND 2.0
 #define OUTLIER_RATIO 0.05
+#define BOX_COLOR blue
 
 SDL_Surface *screen;
 bool mouseDrag = false;
@@ -370,9 +371,11 @@ void getKMeans(Image image, SDL_Rect* rect, Color *palette, int k) {
 int findTargetColor(Image image, SDL_Rect* rect, Color *palette, int k) {
 	int* count = new int[k]();
 	int maxCount=0,target;
-	for (int i=0;i<rect->h/2;i++) {
-		unsigned char* src = image.data + ((rect->y+rect->h/4+i) * image.width + rect->w/4+rect->x)*3;
-		for (int j=0;j<rect->w/2;j++) {
+	int dh = rect->h/2;
+	int dw = rect->w/2;
+	for (int i=0;i<dh;i++) {
+		unsigned char* src = image.data + ((rect->y+(rect->h-dh)/2+i) * image.width + (rect->w-dw)/2+rect->x)*3;
+		for (int j=0;j<dw;j++) {
 			Color c;
 			c.r = *src++;
 			c.g = *src++;
@@ -1024,11 +1027,11 @@ bool loadImage(char* name,Image *image,bool color) {
 	image->data = new unsigned char[image->width*image->height*3];
 	if (color) {
 		fread(image->data,1,image->width*image->height*3,pgm);
-		for (int i=image->width*image->height;i>=0;i--) {
-			unsigned char tmp = image->data[i*3+2];
-			image->data[i*3+2] = image->data[i*3];
-			image->data[i*3] = tmp;
-		}
+//		for (int i=image->width*image->height;i>=0;i--) {
+//			unsigned char tmp = image->data[i*3+2];
+//			image->data[i*3+2] = image->data[i*3];
+//			image->data[i*3] = tmp;
+//		}
 	} else {
 		fread(image->data,1,image->width*image->height,pgm);
 		for (int i=image->width*image->height;i>=0;i--) {
@@ -1047,10 +1050,35 @@ bool loadImageByIndex(int index, Image *image,bool color) {
 	return loadImage(buffer,image,color);
 }
 
+void writeImageByIndex(int index,SDL_Surface *surf,bool color) {
+	char buffer[128];
+	if (color)
+		sprintf(buffer,"%d-seg.ppm",index);
+	else
+		sprintf(buffer,"%d-seg.pgm",index);
+	FILE* f = fopen(buffer,"w");
+	if (color) {
+		fprintf(f,"P6\n%d %d\n255\n",surf->w,surf->h);
+		unsigned char* src = (unsigned char*) surf->pixels;
+		for (int i=0;i<surf->h;i++) {
+			fwrite(src,1,surf->w*3,f);
+			src += surf->pitch;
+		}
+	} else {
+		fprintf(f,"P5\n%d %d\n255\n",surf->w,surf->h);
+		unsigned char* src = (unsigned char*) surf->pixels;
+		for (int i=0;i<surf->h;i++) {
+			fwrite(src,1,surf->w,f);
+			src += surf->pitch;
+		}
+	}
+	fclose(f);
+}
+
 int main(int argc, char* argv[]) {
 
 	if (argc < 3) {
-		printf("./match_image target.pgm target_point.txt [1.pgm ..]\n");
+		printf("./match_image target.ppm target_point.txt [1.ppm ..]\n");
 		return 1;
 	}
 	srand(0);
@@ -1102,12 +1130,13 @@ int main(int argc, char* argv[]) {
 								int target = targetList[i];
 								expandBox(currentBox,EXPAND,EXPAND);
 								floodFillRegionInBox(labimage,currentRegion,currentBox,currentPalette,K_PARAM,target);
-								highlightRegion(screen,currentRegion,red);
+								highlightRegion(screen,currentRegion,BOX_COLOR);
 								*currentRegion = convexHull(*currentRegion);
 								minBoundRect(currentRegion,currentBox,true);
-								drawBox(screen,currentBox,red);
+								drawBox(screen,currentBox,BOX_COLOR);
 							}
 							writeBoxToFile(&box,target_point);
+							writeImageByIndex(targetIndex,screen,use_color);
 							SDL_Flip(screen);
 						}
 						break;
@@ -1124,16 +1153,42 @@ int main(int argc, char* argv[]) {
 								int target = targetList[i];
 								expandBox(currentBox,EXPAND,EXPAND);
 								floodFillRegionInBox(labimage,currentRegion,currentBox,currentPalette,K_PARAM,target);
-								highlightRegion(screen,currentRegion,red);
+								highlightRegion(screen,currentRegion,BOX_COLOR);
 								*currentRegion = convexHull(*currentRegion);
 								minBoundRect(currentRegion,currentBox,true);
-								drawBox(screen,currentBox,red);
+								drawBox(screen,currentBox,BOX_COLOR);
 							}
 							writeBoxToFile(&box,target_point);
+							writeImageByIndex(targetIndex,screen,use_color);
 							SDL_Flip(screen);
 						}
 						break;
-						case 'm':
+						case 'm': //bulk process
+                        struct timespec tic,toc;
+                        clock_gettime(CLOCK_MONOTONIC,&tic);
+						while (loadImageByIndex(++targetIndex,&baseimage,use_color)) {
+							delete[] labimage.data;
+							labimage = imclone(baseimage);
+							convertLAB(labimage);
+							imgcpy(baseimage,screen);
+							for (size_t i=0;i<rectList.size();i++) {
+								float* currentBox = box.data() + i * 8;
+								Color* currentPalette = palette.data() + i * K_PARAM;
+								std::vector<Coordinate> *currentRegion = region.data() + i;
+								int target = targetList[i];
+								expandBox(currentBox,EXPAND,EXPAND);
+								floodFillRegionInBox(labimage,currentRegion,currentBox,currentPalette,K_PARAM,target);
+								highlightRegion(screen,currentRegion,BOX_COLOR);
+								*currentRegion = convexHull(*currentRegion);
+								minBoundRect(currentRegion,currentBox,true);
+								drawBox(screen,currentBox,BOX_COLOR);
+							}
+							writeBoxToFile(&box,target_point);
+							writeImageByIndex(targetIndex,screen,use_color);
+							SDL_Flip(screen);
+						}
+                        clock_gettime(CLOCK_MONOTONIC,&toc);
+                        printf("imsegment: %fs\n",toc.tv_sec - tic.tv_sec + 0.000000001 * toc.tv_nsec - 0.000000001 * tic.tv_nsec);
 						break;
 						case 'v':
 						break;
@@ -1175,7 +1230,7 @@ int main(int argc, char* argv[]) {
 						getKMeans(labimage,&currentRect,currentPalette,K_PARAM);
 						targetList.push_back(findTargetColor(labimage,&currentRect,currentPalette,K_PARAM));
 						floodFillRegion(labimage,currentRegion,&currentRect,currentPalette,K_PARAM,targetList.back());
-						highlightRegion(screen,currentRegion,red);
+						highlightRegion(screen,currentRegion,BOX_COLOR);
 						*currentRegion = convexHull(*currentRegion);
 						minBoundRect(currentRegion,currentBox,false);
 						drawBox(screen,currentBox,red);

@@ -243,7 +243,7 @@ int main(int argc, char* argv[]) {
 		}
 		fprintf(camera_location,"\n");
 		totalObjects += numObjects[k];
-		sprintf(buffer,"%lu.site.ppm",k+1);
+		sprintf(buffer,"%lu-site.ppm",k+1);
 		printf("%s: %d/%lu inliers (%f)\n",buffer,maxInliers,x_src.size(),1.0*maxInliers/x_src.size());
 		score += 1.0*maxInliers/x_src.size();
 		writeImage(buffer,&raster,true);

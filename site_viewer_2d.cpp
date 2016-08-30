@@ -45,7 +45,8 @@ double scrollSpeed = 1.01;
 float fov = 70;
 PCD* cloud;
 std::vector< std::vector<Point> > object;
-int location_index = 0;
+int location_index = -1;
+SDL_Surface *screen;
 
 PCD* NewPCD(const char* fileName) {
 	PCD* pcd = new PCD();
@@ -186,8 +187,10 @@ void draw() {
 	glEnd();
 
 	glColor3ub(0,255,0);
-	for (size_t i=0;i<object[location_index].size()/8;i++) {
-		drawBox(object[location_index].data() + i*8);
+	if (location_index >= 0) {
+		for (size_t i=0;i<object[location_index].size()/8;i++) {
+			drawBox(object[location_index].data() + i*8);
+		}
 	}
 
 	glFlush();
@@ -195,6 +198,22 @@ void draw() {
 
 	glPopMatrix();
 	glPopAttrib();
+}
+
+void writeImageByIndex(int index,SDL_Surface *surf) {
+	char buffer[128];
+	sprintf(buffer,"%d-pcd.ppm",index);
+	FILE* f = fopen(buffer,"w");
+	fprintf(f,"P6\n%d %d\n255\n",surf->w,surf->h);
+	unsigned char* pixels = new unsigned char[surf->w*surf->h*3]();
+	glReadPixels(0,0,surf->w,surf->h,GL_RGB,GL_UNSIGNED_BYTE,pixels);
+	unsigned char* src = pixels + (surf->h-1)*surf->w*3;
+	for (int i=0;i<surf->h;i++) {
+		fwrite(src,1,surf->w*3,f);
+		src -= surf->w*3;
+	}
+	delete[] pixels;
+	fclose(f);
 }
 
 int main(int argc,char* argv[]) {
@@ -220,7 +239,7 @@ int main(int argc,char* argv[]) {
 	cam.position.i -= (extent.maxX + extent.minX) / 2;
 	cam.position.j -= (extent.maxY + extent.minY) / 2;
 	cam.position.k -= extent.minZ;
-	FILE* ppm = fopen("site_blur.ppm","r");
+	FILE* ppm = fopen("site.ppm","r");
 	fgets(buffer,128,ppm);
 	fgets(buffer,128,ppm);
 	char *c = buffer;
@@ -272,7 +291,7 @@ int main(int argc,char* argv[]) {
 
 	SDL_Init(SDL_INIT_VIDEO);
 	SDL_WM_SetCaption("Point Cloud", NULL);
-	SDL_SetVideoMode(800,600, 32, SDL_OPENGL);
+	screen = SDL_SetVideoMode(800,600, 24, SDL_OPENGL);
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
 	gluPerspective(fov,(double)640/480,1,1000);
@@ -288,25 +307,31 @@ int main(int argc,char* argv[]) {
 					switch( event.key.keysym.sym ){
 						case SDLK_LEFT:
 						cameraX -= 1;
+						draw();
 						break;
 						case SDLK_RIGHT:
 						cameraX += 1;
+						draw();
 						break;
 						case SDLK_UP:
 						cameraZ += 1;
+						draw();
 						break;
 						case SDLK_DOWN:
 						cameraZ -= 1;
+						draw();
 						break;
 						case 'n':
-						if (location_index >= object.size())
-							location_index = 0;
 						location_index++;
+						if (location_index >= object.size())
+							location_index = -1;
+						draw();
+						if (location_index >= 0)
+							writeImageByIndex(location_index+1,screen);
 						break;
 						default:
 						break;
 					}
-					draw();
 					break;
 				case SDL_MOUSEBUTTONDOWN:
 					if (event.button.button == SDL_BUTTON_WHEELUP) {
