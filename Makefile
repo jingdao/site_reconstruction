@@ -30,3 +30,9 @@ solve_pnp_2d: solve_pnp_2d.cpp
 imsegment: imsegment.cpp
 	$(CXX) -ggdb3 -std=c++11 -o $@ $< -lSDL
 
+imlabel: imlabel.cpp
+	$(CXX) -ggdb3 -std=c++11 -o $@ $< -lSDL
+
+solve_accuracy: solve_accuracy.cpp
+	$(CXX) -ggdb3 -std=c++11 -o $@ $<
+
