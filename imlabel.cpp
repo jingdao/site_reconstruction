@@ -256,8 +256,8 @@ bool loadImageByIndex(int index, Image *image,bool color) {
 
 int main(int argc, char* argv[]) {
 
-	if (argc < 2) {
-		printf("%s label_point.txt [1.ppm ..]\n",argv[0]);
+	if (argc < 3) {
+		printf("%s label_point.txt maxID [1.ppm ..]\n",argv[0]);
 		return 1;
 	}
 
@@ -279,6 +279,7 @@ int main(int argc, char* argv[]) {
 	std::vector<float> centerY;
 	int boxID = 0;
 	FILE* label_point = fopen(argv[1],"w");
+	int maxID = atoi(argv[2]);
 
 	imgcpy(baseimage,screen);
 	SDL_Flip(screen);
@@ -290,9 +291,24 @@ int main(int argc, char* argv[]) {
 				case SDL_KEYDOWN:
 					switch( event.key.keysym.sym ){
 						case 'n':
+						if (targetIndex >= maxID) {
+							printf("maxID reached\n");
+							break;
+						}
 						writeBoxToFile(&boxList,label_point);
 						printf("%d.ppm: wrote %lu boxes\n",targetIndex,boxList.size());
-						if (loadImageByIndex(++targetIndex,&baseimage,true)) {
+						do {
+							targetIndex++;
+							char buffer[128];
+							sprintf(buffer,"%d.key",targetIndex);
+							FILE* key = fopen(buffer,"r");
+							if (key) {
+								fclose(key);
+								break;
+							} else 
+								fprintf(label_point,"0\n");
+						} while (targetIndex < maxID);
+						if (loadImageByIndex(targetIndex,&baseimage,true)) {
 							imgcpy(baseimage,screen);
 							for (size_t i=0;i<boxList.size();i++)
 								drawBox(screen,boxList[i].data(),yellow);

@@ -137,7 +137,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	srand(time(NULL));
-	char buffer[128];
+	char buffer[1024];
 	std::vector<float> x_target,y_target;
 	std::vector<int> match_target;
 	std::vector<int> numObjects;
@@ -146,7 +146,7 @@ int main(int argc, char* argv[]) {
 		printf("Cannot open %s\n",argv[1]);
 		return 1;
 	}
-	while (fgets(buffer,128,target_point)) {
+	while (fgets(buffer,1024,target_point)) {
 		float x,y;
 		int numMatch;
 		char* c = buffer;
@@ -179,7 +179,12 @@ int main(int argc, char* argv[]) {
 		std::vector<float> x_src,y_src,x_dst,y_dst;
 		sprintf(buffer,"%lu.site.match",k+1);
 		FILE* siteMatch = fopen(buffer,"r");
-		while (fgets(buffer,128,siteMatch)) {
+		if (!siteMatch) {
+			fprintf(camera_location,"0\n");
+			totalObjects += numObjects[k];
+			continue;
+		}
+		while (fgets(buffer,1024,siteMatch)) {
 			int id1,id2;
 			float x1,x2,y1,y2;
 			if (sscanf(buffer,"%d %f %f %d %f %f",&id1,&x1,&y1,&id2,&x2,&y2)==6) {

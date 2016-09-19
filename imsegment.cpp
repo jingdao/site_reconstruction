@@ -7,8 +7,9 @@
 #include <vector>
 #include <algorithm>
 #include <SDL/SDL.h>
-#define K_PARAM 5
-#define EXPAND 2.0
+#define FOREGROUND 1
+#define K_PARAM 3
+#define EXPAND 3.0
 #define OUTLIER_RATIO 0.05
 #define BOX_COLOR blue
 
@@ -399,6 +400,35 @@ int findTargetColor(Image image, SDL_Rect* rect, Color *palette, int k) {
 	return target;
 }
 
+int findBackgroundColor(Image image, SDL_Rect* rect, Color *palette, int k) {
+	int* count = new int[k]();
+	int maxCount=0,target;
+	for (int i=0;i<rect->h;i++) {
+		unsigned char* src = image.data + ((rect->y+i) * image.width + rect->x)*3;
+		for (int j=0;j<rect->w;j++) {
+			Color c;
+			c.r = *src++;
+			c.g = *src++;
+			c.b = *src++;
+			int minD=255*255*3,minID;
+			for (int j=0;j<k;j++) {
+				int d = getDiff(c,palette[j]);
+				if (d < minD) {
+					minD = d;
+					minID = j;
+				}
+			}
+			count[minID]++;
+			if (count[minID] > maxCount) {
+				maxCount = count[minID];
+				target = minID;
+			}
+		}
+	}
+	delete[] count;
+	return target;
+}
+
 void regionGrow(Image image, std::vector<Coordinate> *region, Coordinate seed, unsigned char threshold) {
 	region->clear();
 	bool** visited = new bool*[image.width];
@@ -585,7 +615,11 @@ void floodFillRegion(Image image, std::vector<Coordinate> *region, SDL_Rect* rec
 						minID = l;
 					}
 				}
+#if FOREGROUND
 				if (minID == targetID) {
+#else
+				if (minID != targetID) {
+#endif
 					marked.push_back(c);
 					for (int m = -2; m<= 2; m++) {
 						for (int n = -2; n <= 2; n++) {
@@ -668,7 +702,11 @@ void floodFillRegionInBox(Image image, std::vector<Coordinate> *region, float* b
 						minID = l;
 					}
 				}
+#if FOREGROUND
 				if (minID == targetID) {
+#else
+				if (minID != targetID) {
+#endif
 					marked.push_back(c);
 					for (int m = -2; m<= 2; m++) {
 						for (int n = -2; n <= 2; n++) {
@@ -1078,7 +1116,7 @@ void writeImageByIndex(int index,SDL_Surface *surf,bool color) {
 int main(int argc, char* argv[]) {
 
 	if (argc < 3) {
-		printf("./match_image target.ppm target_point.txt [1.ppm ..]\n");
+		printf("%s target.ppm target_point.txt [1.ppm ..]\n",argv[0]);
 		return 1;
 	}
 	srand(0);
@@ -1228,7 +1266,11 @@ int main(int argc, char* argv[]) {
 						std::vector<Coordinate> *currentRegion = region.data() + region.size() - 1;
 						float* currentBox = box.data() + box.size() - 8;
 						getKMeans(labimage,&currentRect,currentPalette,K_PARAM);
+#if FOREGROUND
 						targetList.push_back(findTargetColor(labimage,&currentRect,currentPalette,K_PARAM));
+#else
+						targetList.push_back(findBackgroundColor(labimage,&currentRect,currentPalette,K_PARAM));
+#endif
 						floodFillRegion(labimage,currentRegion,&currentRect,currentPalette,K_PARAM,targetList.back());
 						highlightRegion(screen,currentRegion,BOX_COLOR);
 						*currentRegion = convexHull(*currentRegion);

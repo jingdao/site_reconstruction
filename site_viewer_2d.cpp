@@ -6,6 +6,8 @@
 #include <GL/gl.h>
 #include <GL/glu.h>
 #include <vector>
+#include <ft2build.h>
+#include FT_FREETYPE_H
 #define OBJ_HEIGHT 2
 
 struct PCD {
@@ -36,6 +38,12 @@ struct Camera{
     float focal_length,yaw,pitch,roll;
 };
 
+const int labelWidth=80, labelHeight=30,fontpixels=20,grayLevel=50;
+FT_Library ft;
+FT_Face face;
+FT_GlyphSlot glyph;
+GLuint textures;
+unsigned char raster[labelWidth * labelHeight * 3];
 double cameraX,cameraY,cameraZ;
 double centerX=0,centerY=0,centerZ=0;
 double upX=0,upY=0,upZ=1;
@@ -125,7 +133,7 @@ void drawLine(Point p1,Point p2) {
 }
 
 void drawBox(Point* p) {
-	glLineWidth(3.0);
+	glLineWidth(5.0);
 	glBegin(GL_LINES);
 
 	glVertex3d(p[0].x,p[0].y,p[0].z);
@@ -166,6 +174,38 @@ Point project3D(float u,float v,float z,Camera cam,float cx, float cy) {
 	return p;
 }
 
+void render_text(const char *text, unsigned char *data) {
+	memset(data,0,labelWidth*labelHeight*3);
+	const char *p;
+	unsigned char color[] = {255,255,255};
+	int x = 0;
+	for(p = text; *p; p++) {
+		if(FT_Load_Char(face, *p, FT_LOAD_RENDER))
+			continue;
+		unsigned char *src = glyph->bitmap.buffer;
+		int k=0;
+		for (int i=0;i<glyph->bitmap.rows;i++) {
+			unsigned char *dest = data + ((glyph->bitmap_top - i + fontpixels/2) * labelWidth + x + glyph->bitmap_left)* 3;
+			for (int j=0;j<glyph->bitmap.width;j++) {
+				memset(dest,*src,3); // draw in grayscale
+				//*dest = *src; //draw in red
+				src++;
+				dest+=3;
+			}
+		}
+		x += glyph->bitmap_left + glyph->bitmap.width;
+//		x += glyph->bitmap.width;
+		if (x >= labelWidth)
+			break;
+	}
+}
+
+void drawText(Point* p, const char* description) {
+	glRasterPos3f((p[4].x+p[5].x+p[6].x+p[7].x)/4, (p[4].y+p[5].y+p[6].y+p[7].y)/4, p[4].z);
+	render_text(description,raster);
+	glDrawPixels(labelWidth,labelHeight,GL_RGB,GL_UNSIGNED_BYTE,raster);
+}
+
 void draw() {
 	glPushAttrib(GL_ALL_ATTRIB_BITS);
 	glPushMatrix();
@@ -186,10 +226,17 @@ void draw() {
 	}
 	glEnd();
 
-	glColor3ub(0,255,0);
 	if (location_index >= 0) {
 		for (size_t i=0;i<object[location_index].size()/8;i++) {
-			drawBox(object[location_index].data() + i*8);
+			if (i==0) {
+				glColor3ub(0,255,0);
+				drawBox(object[location_index].data() + i*8);
+				drawText(object[location_index].data() + i*8, "car");
+			} else {
+				glColor3ub(0,0,255);
+				drawBox(object[location_index].data() + i*8);
+				drawText(object[location_index].data() + i*8, "worker");
+			}
 		}
 	}
 
@@ -222,7 +269,7 @@ int main(int argc,char* argv[]) {
 		return 1;
 	}
 
-	char buffer[128];
+	char buffer[1024];
 	cloud = NewPCD(argv[1]);
 	if (!cloud)
 		return 1;
@@ -252,7 +299,7 @@ int main(int argc,char* argv[]) {
 		printf("Cannot open %s\n",argv[2]);
 		return 1;
 	}
-	while (fgets(buffer,128,target_point)) {
+	while (fgets(buffer,1024,target_point)) {
 		float x,y;
 		int numMatch;
 		char* c = buffer;
@@ -289,6 +336,11 @@ int main(int argc,char* argv[]) {
 	}
 	fclose(target_point);
 
+	FT_Init_FreeType(&ft);
+	FT_New_Face(ft,"/usr/share/fonts/truetype/freefont/FreeSans.ttf",0,&face);
+	FT_Set_Pixel_Sizes(face,fontpixels,fontpixels);
+	glyph = face->glyph;
+
 	SDL_Init(SDL_INIT_VIDEO);
 	SDL_WM_SetCaption("Point Cloud", NULL);
 	screen = SDL_SetVideoMode(800,600, 24, SDL_OPENGL);
@@ -322,12 +374,36 @@ int main(int argc,char* argv[]) {
 						draw();
 						break;
 						case 'n':
-						location_index++;
-						if (location_index >= object.size())
-							location_index = -1;
+						do {
+							location_index++;
+							if (location_index >= object.size()) {
+								location_index = -1;
+								break;
+							}
+						} while (object[location_index].size()==0);
 						draw();
 						if (location_index >= 0)
 							writeImageByIndex(location_index+1,screen);
+						break;
+						case 'm':
+						while (true) {
+							do {
+								location_index++;
+								if (location_index >= object.size()) {
+									location_index = -1;
+									break;
+								}
+							} while (object[location_index].size()==0);
+							draw();
+							if (location_index >= 0)
+								writeImageByIndex(location_index+1,screen);
+							else break;
+							double rho = sqrt(cameraX*cameraX+cameraY*cameraY);
+							double xstep = cameraY / rho * 50;
+							double ystep = -cameraX / rho * 50;
+							cameraX += 0.05 * xstep;
+							cameraY += 0.05 * ystep;
+						}
 						break;
 						default:
 						break;

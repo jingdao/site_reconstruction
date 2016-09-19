@@ -1,6 +1,7 @@
 #!/bin/bash
 
 infile=../Videos/Narrawview_MovingBoom_Car\ only.mp4
+#infile=../Videos/MovingBoom_Car_Worker.mp4
 generate_pcd = false
 
 if $generate_pcd
@@ -15,6 +16,8 @@ else
 fi
 
 avconv -i $infile -ss 15 -t 35 -r 1 -vf scale=600:-1 %d.ppm
+#avconv -i ../Videos/MovingBoom_Car_Worker.mp4 -ss 41 -t 18 -r 5 -vf scale=1200:-1 %d.ppm
+for i in `seq 1 35`;do convert $i.ppm -distort barrel "0.03183 -0.11592 0" $i.ppm
 ../../imsegment 1.ppm target_point.txt
 for i in `seq 1 35`;do convert $i.ppm $i.pgm;done
 for i in `seq 1 35`;do ~/Downloads/siftDemoV4/sift < $i.pgm > $i.key;done

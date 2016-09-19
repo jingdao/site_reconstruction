@@ -86,11 +86,13 @@ int main(int argc,char* argv[]) {
 	char buffer[512];
 	std::vector< std::vector<Coordinate> > target_box;
 	std::vector< std::vector<Coordinate> > label_box;
+	int numObjects;
 	while (fgets(buffer,512,target)) {
 		float x,y;
 		int numMatch;
 		char* c = buffer;
 		int n = strtol(c,&c,10);
+		numObjects = n/4;
 		std::vector<Coordinate> box;
 		for (int i=0;i<n;i++) {
 			x = strtod(c,&c);
@@ -98,8 +100,10 @@ int main(int argc,char* argv[]) {
 			numMatch = strtol(c,&c,10);
 			Coordinate p = {x,y};
 			box.push_back(p);
-			if (i%4==3)
+			if (i%4==3) {
 				target_box.push_back(box);
+				box.clear();
+			}
 		}
 	}
 	while (fgets(buffer,512,label)) {
@@ -108,14 +112,21 @@ int main(int argc,char* argv[]) {
 		char* c = buffer;
 		int n = strtol(c,&c,10);
 		std::vector<Coordinate> box;
+		if (n==0) {
+			for (int i=0;i<numObjects;i++)
+				label_box.push_back(box);
+			continue;
+		}
 		for (int i=0;i<n;i++) {
 			x = strtod(c,&c);
 			y = strtod(c,&c);
 			numMatch = strtol(c,&c,10);
 			Coordinate p = {x,y};
 			box.push_back(p);
-			if (i%4==3)
+			if (i%4==3) {
 				label_box.push_back(box);
+				box.clear();
+			}
 		}
 	}
 
@@ -123,12 +134,17 @@ int main(int argc,char* argv[]) {
 	float acc_min,acc_max;
 	float prec_avg=0,prec_stddev=0;
 	float prec_min,prec_max;
+	int count=0;
 	for (size_t i=0;i<target_box.size();i++) {
+		if (label_box[i].size()==0)
+			continue;
 		float A1 = polygonArea(convexHull(target_box[i]));
 		float A2 = polygonArea(convexHull(label_box[i]));
 		float A3 = polygonArea(convexHull(polygonCombine(target_box[i],label_box[i])));
 		float acc = A3 > A1 + A2 ? 0 : (A1 + A2 - A3) / A2;
 		float prec = A3 > A1 + A2 ? 0 : (A1 + A2 - A3) / A1;
+		if (acc > 1) acc = 1;
+		if (prec > 1) prec = 1;
 		acc_avg += acc;
 		acc_stddev += acc*acc;
 		if (i==0 || acc < acc_min) acc_min = acc;
@@ -137,12 +153,13 @@ int main(int argc,char* argv[]) {
 		prec_stddev += prec*prec;
 		if (i==0 || prec < prec_min) prec_min = prec;
 		if (i==0 || prec > prec_max) prec_max = prec;
-//		printf("Box %lu: %.2f %.2f %8.2f %.4f %.4f\n",i,A1,A2,A3,acc,prec);
+		printf("Box %lu: %.2f %.2f %8.2f %.4f %.4f\n",i,A1,A2,A3,acc,prec);
+		count++;
 	}
-	acc_avg /= target_box.size();
-	acc_stddev = sqrt(acc_stddev/target_box.size() - acc_avg*acc_avg);
-	prec_avg /= target_box.size();
-	prec_stddev = sqrt(prec_stddev/target_box.size() - prec_avg*prec_avg);
+	acc_avg /= count;
+	acc_stddev = sqrt(acc_stddev/count - acc_avg*acc_avg);
+	prec_avg /= count;
+	prec_stddev = sqrt(prec_stddev/count - prec_avg*prec_avg);
 	printf("Accuracy Min %.4f Max %.4f Average %.4f +- %.4f Overlap\n",acc_min,acc_max,acc_avg,acc_stddev);
 	printf("Precision Min %.4f Max %.4f Average %.4f +- %.4f Overlap\n",prec_min,prec_max,prec_avg,prec_stddev);
 
