@@ -53,6 +53,7 @@ double scrollSpeed = 1.01;
 float fov = 70;
 PCD* cloud;
 std::vector< std::vector<Point> > object;
+std::vector< std::vector<Point> > background;
 int location_index = -1;
 SDL_Surface *screen;
 
@@ -125,6 +126,95 @@ void centerPCD(PCD* pcd, Box box) {
 	}
 }
 
+void getPCA(PCD *cloud, std::vector<Point> *box, Box extent) {
+	float cx = (extent.minX + extent.maxX)/2;
+	float cy = (extent.minY + extent.maxY)/2;
+	float cz = extent.minZ;
+	double cov[4] = {}; //column major
+	Point center = {};
+	for (int i = 0; i < cloud->numPoints; i++) {
+		center.x += cloud->float_data[i*4];
+		center.y += cloud->float_data[i*4+1];
+		center.z += cloud->float_data[i*4+2];
+	}
+	center.x /= cloud->numPoints; 
+	center.y /= cloud->numPoints;
+	center.z /= cloud->numPoints;
+	for (int j = 0; j<cloud->numPoints; j++) {
+		float deltaP[2] = {
+			cloud->float_data[j*4]- center.x,
+			cloud->float_data[j*4+1]- center.y,
+		};
+		cov[0] += deltaP[0] * deltaP[0];
+		cov[1] += deltaP[1] * deltaP[0];
+		cov[2] += deltaP[0] * deltaP[1];
+		cov[3] += deltaP[1] * deltaP[1];
+	}
+	cov[0] /= cloud->numPoints * cloud->numPoints;
+	cov[1] /= cloud->numPoints * cloud->numPoints;
+	cov[2] /= cloud->numPoints * cloud->numPoints;
+	cov[3] /= cloud->numPoints * cloud->numPoints;
+	float trace = cov[0] + cov[3];
+	float det = cov[0] * cov[3] - cov[1] * cov[2];
+	float L1 = trace / 2 + sqrt(trace*trace / 4 - det);
+	float L2 = trace / 2 - sqrt(trace*trace / 4 - det);
+	float minScale[3], maxScale[3];
+	float v[9] = {
+		0,0,0,
+		0,0,0,
+		0,0,1
+	};
+	if (cov[2] != 0) {
+		v[0] = L1 - cov[3];
+		v[1] = L2 - cov[3];
+		v[3] = v[4] = cov[2];
+	}
+	else if (cov[1] != 0) {
+		v[0] = v[1] = cov[1];
+		v[3] = L1 - cov[0];
+		v[4] = L2 - cov[0];
+	}
+	else {
+		v[0] = v[4] = 1;
+	}
+	float m1 = sqrt(v[0] * v[0] + v[3] * v[3]);
+	float m2 = sqrt(v[1] * v[1] + v[4] * v[4]);
+	v[0] /= m1;
+	v[3] /= m1;
+	v[1] /= m2;
+	v[4] /= m2;
+	for (int j = 0; j<cloud->numPoints; j++) {
+		for (int i = 0; i<3; i++) {
+			float dotProduct =
+				cloud->float_data[j*4] * v[i * 3] +
+				cloud->float_data[j*4+1] * v[i * 3 + 1] +
+				cloud->float_data[j*4+2] * v[i * 3 + 2];
+			if (j == 0 || dotProduct < minScale[i])
+				minScale[i] = dotProduct;
+			if (j == 0 || dotProduct > maxScale[i])
+				maxScale[i] = dotProduct;
+		}
+	}
+	float bbCenter[3] = {0,0,0};
+	for (int i = 0; i<3; i++) {
+		bbCenter[0] += (minScale[i] + maxScale[i]) / 2 * v[i * 3];
+		bbCenter[1] += (minScale[i] + maxScale[i]) / 2 * v[i * 3 + 1];
+		bbCenter[2] += (minScale[i] + maxScale[i]) / 2 * v[i * 3 + 2];
+	}
+	for (int i = 0; i<8; i++) {
+		float coords[3];
+		for (int j = 0; j<3; j++) {
+			coords[j] = bbCenter[j];
+			for (int axis = 0; axis<3; axis++) {
+				float sign = (i & 1 << axis) ? 1 : -1;
+				coords[j] += sign * (maxScale[axis]-minScale[axis]) / 2 * v[axis * 3 + j];
+			}
+		}
+		Point p = {coords[0]-cx,coords[1]-cy,coords[2]-cz};
+		box->push_back(p);
+	}
+}
+
 void drawLine(Point p1,Point p2) {
 	glBegin(GL_LINES);
 	glVertex3d(p1.x,p1.y,p1.z);
@@ -133,7 +223,6 @@ void drawLine(Point p1,Point p2) {
 }
 
 void drawBox(Point* p) {
-	glLineWidth(5.0);
 	glBegin(GL_LINES);
 
 	glVertex3d(p[0].x,p[0].y,p[0].z);
@@ -227,6 +316,7 @@ void draw() {
 	glEnd();
 
 	if (location_index >= 0) {
+		glLineWidth(5.0);
 		for (size_t i=0;i<object[location_index].size()/8;i++) {
 			if (i==0) {
 				glColor3ub(0,255,0);
@@ -238,6 +328,11 @@ void draw() {
 				drawText(object[location_index].data() + i*8, "worker");
 			}
 		}
+	}
+	glColor3ub(255,255,255);
+	glLineWidth(2.0);
+	for (size_t i=0;i<background.size();i++) {
+		drawBox(background[i].data());
 	}
 
 	glFlush();
@@ -293,6 +388,18 @@ int main(int argc,char* argv[]) {
 	int bmp_width = strtol(c,&c,10);
 	int bmp_height = strtol(c,&c,10);
 	fclose(ppm);
+
+	int background_id=0;
+	while (true) {
+		sprintf(buffer,"../clusters/%d-cloud.pcd",background_id);
+		PCD* cloud = NewPCD(buffer);
+		if (!cloud)
+			break;
+		std::vector<Point> box;
+		getPCA(cloud,&box,extent);
+		background.push_back(box);
+		background_id++;
+	}
 
 	FILE* target_point = fopen(argv[2],"r");
 	if (!target_point) {

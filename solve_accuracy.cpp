@@ -141,8 +141,8 @@ int main(int argc,char* argv[]) {
 		float A1 = polygonArea(convexHull(target_box[i]));
 		float A2 = polygonArea(convexHull(label_box[i]));
 		float A3 = polygonArea(convexHull(polygonCombine(target_box[i],label_box[i])));
-		float acc = A3 > A1 + A2 ? 0 : (A1 + A2 - A3) / A2;
-		float prec = A3 > A1 + A2 ? 0 : (A1 + A2 - A3) / A1;
+		float acc = isnan(A3) ? 0 : A3 > A1 + A2 ? 0 : (A1 + A2 - A3) / A2;
+		float prec = isnan(A3) ? 0 : A3 > A1 + A2 ? 0 : (A1 + A2 - A3) / A1;
 		if (acc > 1) acc = 1;
 		if (prec > 1) prec = 1;
 		acc_avg += acc;
