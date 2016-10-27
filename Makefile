@@ -36,3 +36,6 @@ imlabel: imlabel.cpp
 solve_accuracy: solve_accuracy.cpp
 	$(CXX) -ggdb3 -std=c++11 -o $@ $<
 
+vocab_tree: vocab_tree.cpp
+	$(CXX) -ggdb3 -std=c++11 -o $@ $< -llapack -lblas 
+

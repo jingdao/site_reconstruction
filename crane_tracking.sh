@@ -22,7 +22,9 @@ for i in `seq 1 35`;do convert $i.ppm -distort barrel "0.03183 -0.11592 0" $i.pp
 for i in `seq 1 35`;do convert $i.ppm $i.pgm;done
 #for i in `seq 1 5 35`;do convert $i.ppm $i.pgm;done
 for i in `seq 1 35`;do ~/Downloads/siftDemoV4/sift < $i.pgm > $i.key;done
-for i in `seq 1 35`;do ~/Documents/vslam/improc 0.8 $i.site.match $i.key site_blur.key;done
+#for i in `seq 1 35`;do ~/Documents/vslam/improc 0.8 $i.site.match $i.key site_blur.key;done
+#../../kdtree_match.py 0.8 site_blur.key 1 35
+../../vocab_tree 0.8 site_blur.key 1 35
 ../../solve_pnp_2d target_point.txt camera_location_2d.txt site.ppm
 ../../site_viewer_2d ../filtered.pcd camera_location_2d.txt 
 

@@ -315,6 +315,12 @@ void draw() {
 	}
 	glEnd();
 
+	glColor3ub(255,255,255);
+	glLineWidth(2.0);
+	for (size_t i=0;i<background.size();i++) {
+		drawBox(background[i].data());
+	}
+
 	if (location_index >= 0) {
 		glLineWidth(5.0);
 		for (size_t i=0;i<object[location_index].size()/8;i++) {
@@ -329,12 +335,6 @@ void draw() {
 			}
 		}
 	}
-	glColor3ub(255,255,255);
-	glLineWidth(2.0);
-	for (size_t i=0;i<background.size();i++) {
-		drawBox(background[i].data());
-	}
-
 	glFlush();
 	SDL_GL_SwapBuffers();
 

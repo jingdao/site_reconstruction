@@ -173,7 +173,11 @@ int main(int argc, char* argv[]) {
 
 	FILE* camera_location = fopen(argv[2],"w");
 	int totalObjects=0;
-	float score=0;
+	float inlier_score=0;
+	float error_score=0;
+	int numMatchFiles=0;
+	int total_inliers=0;
+	int total_matches=0;
 	for (size_t k=0;k<numObjects.size();k++) {
 		//get keypoint matches from file
 		std::vector<float> x_src,y_src,x_dst,y_dst;
@@ -184,6 +188,7 @@ int main(int argc, char* argv[]) {
 			totalObjects += numObjects[k];
 			continue;
 		}
+		numMatchFiles++;
 		while (fgets(buffer,1024,siteMatch)) {
 			int id1,id2;
 			float x1,x2,y1,y2;
@@ -198,6 +203,7 @@ int main(int argc, char* argv[]) {
 		//use RANSAC to obtain best parameters
 		int maxInliers=0;
 		Param bestParam;
+		float bestError;
 		for (int i=0;i<RANSAC_ITERS;i++) {
 			Param p;
 			int id1 = rand() % x_src.size();
@@ -219,15 +225,19 @@ int main(int argc, char* argv[]) {
 			p.Tx = x1p - p.k*(cos(p.theta)*x1 + sin(p.theta)*y1);
 			p.Ty = y1p - p.k*(-sin(p.theta)*x1 + cos(p.theta)*y1);
 			int numInliers=0;
+			float error=0;
 			for (int j=0;j<x_src.size();j++) {
 				float dx = p.k*(cos(p.theta)*x_src[j] + sin(p.theta)*y_src[j]) + p.Tx - x_dst[j];
 				float dy = p.k*(-sin(p.theta)*x_src[j] + cos(p.theta)*y_src[j]) + p.Ty - y_dst[j];
-				if (dx*dx + dy*dy < RANSAC_THRESHOLD)
+				if (dx*dx + dy*dy < RANSAC_THRESHOLD) {
 					numInliers++;
+					error+= dx*dx + dy*dy;
+				}
 			}
 			if (numInliers > maxInliers) {
 				maxInliers = numInliers;
 				bestParam = p;
+				bestError = sqrt(error / numInliers);
 			}
 		}
 		Image raster = imclone(site);
@@ -250,11 +260,14 @@ int main(int argc, char* argv[]) {
 		totalObjects += numObjects[k];
 		sprintf(buffer,"%lu-site.ppm",k+1);
 		printf("%s: %d/%lu inliers (%f)\n",buffer,maxInliers,x_src.size(),1.0*maxInliers/x_src.size());
-		score += 1.0*maxInliers/x_src.size();
+		inlier_score += 1.0*maxInliers/x_src.size();
+		total_inliers += maxInliers;
+		total_matches += x_src.size();
+		error_score += bestError;
 		writeImage(buffer,&raster,true);
 		delete[] raster.data;
 	}
-	printf("PnP score: %f\n",score / numObjects.size());
+	printf("PnP score: %f ( %d/%d inlier) %f (RMSE)\n",inlier_score / numMatchFiles,total_inliers,total_matches,error_score / numMatchFiles);
 	fclose(camera_location);
 	delete[] site.data;
 	return 1;

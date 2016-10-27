@@ -134,6 +134,7 @@ int main(int argc,char* argv[]) {
 	float acc_min,acc_max;
 	float prec_avg=0,prec_stddev=0;
 	float prec_min,prec_max;
+	float norm_acc=0;
 	int count=0;
 	for (size_t i=0;i<target_box.size();i++) {
 		if (label_box[i].size()==0)
@@ -145,6 +146,7 @@ int main(int argc,char* argv[]) {
 		float prec = isnan(A3) ? 0 : A3 > A1 + A2 ? 0 : (A1 + A2 - A3) / A1;
 		if (acc > 1) acc = 1;
 		if (prec > 1) prec = 1;
+		norm_acc += acc > prec ? acc : prec;
 		acc_avg += acc;
 		acc_stddev += acc*acc;
 		if (i==0 || acc < acc_min) acc_min = acc;
@@ -160,9 +162,10 @@ int main(int argc,char* argv[]) {
 	acc_stddev = sqrt(acc_stddev/count - acc_avg*acc_avg);
 	prec_avg /= count;
 	prec_stddev = sqrt(prec_stddev/count - prec_avg*prec_avg);
+	norm_acc /= count;
 	printf("Accuracy Min %.4f Max %.4f Average %.4f +- %.4f Overlap\n",acc_min,acc_max,acc_avg,acc_stddev);
 	printf("Precision Min %.4f Max %.4f Average %.4f +- %.4f Overlap\n",prec_min,prec_max,prec_avg,prec_stddev);
-
+	printf("Normalized Accuracy %.4f\n",norm_acc);
 	fclose(target);
 	fclose(label);
 
