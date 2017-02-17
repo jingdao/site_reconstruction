@@ -7,7 +7,7 @@ generate_pcd = false
 if $generate_pcd
 then
     ../../im_synth downsampled.pcd 1000 1000 site.ppm depth.txt
-    convert site.ppm -blu 0x1 site_blur.ppm
+    convert site.ppm -blur 0x1 site_blur.ppm
     convert site_blur.ppm site_blur.pgm
     ~/Downloads/siftDemoV4/sift < site_blur.pgm > site_blur.key
 else

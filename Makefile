@@ -21,6 +21,9 @@ bundler_viewer: bundler_viewer.cpp
 im_synth: im_synth.cpp
 	$(CXX) -ggdb3 -std=c++11 -o $@ $< -lSDL
 
+im_synth_model: im_synth_model.cpp
+	$(CXX) -ggdb3 -std=c++11 -o $@ $< -lSDL -lGL -lGLU
+
 solve_pnp: solve_pnp.cpp
 	$(CXX) -ggdb3 -std=c++11 -o $@ $< -lopencv_calib3d -lopencv_core
 
