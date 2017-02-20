@@ -52,10 +52,11 @@ double scrollSpeed = 1.01;
 float fov = 70;
 PCD* cloud;
 std::vector<Point> modelVertices;
+std::vector<Point> worldVertices;
 std::vector<Triangle> modelFaces;
 SDL_Surface *screen;
 
-bool loadPLY(const char* filename) {
+bool loadPLY(const char* filename, float scale) {
 	modelVertices.clear();
 	modelFaces.clear();
 	FILE* f = fopen(filename, "r");
@@ -75,9 +76,9 @@ bool loadPLY(const char* filename) {
 				fgets(buf, 256, f);
 				Point p = {0,0,0};
 				if (sscanf(buf, "%f %f %f", &(p.x), &(p.y), &(p.z)) == 3) {
-					p.x *= 0.0254;
-					p.y *= 0.0254;
-					p.z *= 0.0254;
+					p.x *= scale;
+					p.y *= scale;
+					p.z *= scale;
 					modelVertices.push_back(p);
 				}
 				else {
@@ -114,12 +115,11 @@ bool loadPLY(const char* filename) {
 	}
 	centerX /= modelVertices.size();
 	centerY /= modelVertices.size();
-	centerX -= 10; 
-	centerY += 5;
 	for (size_t i = 0; i < modelVertices.size(); i++) {
 		modelVertices[i].x -= centerX;
 		modelVertices[i].y -= centerY;
 		modelVertices[i].z -= bottomZ;
+		worldVertices.push_back(modelVertices[i]);
 	}
 	return true;
 }
@@ -190,6 +190,17 @@ void centerPCD(PCD* pcd, Box box) {
 		pcd->float_data[n*4] -= cx;
 		pcd->float_data[n*4+1] -= cy;
 		pcd->float_data[n*4+2] -= cz;
+	}
+}
+
+void translateModel(Point T,float theta) {
+	worldVertices.clear();
+	for (size_t i=0; i < modelVertices.size(); i++) {
+		Point p;
+		p.x = modelVertices[i].x * cos(theta) - modelVertices[i].y * sin(theta) + T.x;
+		p.y = modelVertices[i].x * sin(theta) + modelVertices[i].y * cos(theta) + T.y;
+		p.z = modelVertices[i].z + T.z;
+		worldVertices.push_back(p);
 	}
 }
 
@@ -346,9 +357,9 @@ void draw() {
 	glColor3ub(200, 200, 200);
 	glBegin(GL_LINES);
 	for (size_t i = 0; i < modelFaces.size(); i++) {
-		Point p1 = modelVertices[modelFaces[i].id1];
-		Point p2 = modelVertices[modelFaces[i].id2];
-		Point p3 = modelVertices[modelFaces[i].id3];
+		Point p1 = worldVertices[modelFaces[i].id1];
+		Point p2 = worldVertices[modelFaces[i].id2];
+		Point p3 = worldVertices[modelFaces[i].id3];
 		glVertex3f(p1.x, p1.y, p1.z);
 		glVertex3f(p2.x, p2.y, p2.z);
 		glVertex3f(p2.x, p2.y, p2.z);
@@ -361,9 +372,9 @@ void draw() {
 	glBegin(GL_TRIANGLES);
 	glColor3ub(100, 100, 100);
 	for (size_t i = 0; i < modelFaces.size(); i++) {
-		Point p1 = modelVertices[modelFaces[i].id1];
-		Point p2 = modelVertices[modelFaces[i].id2];
-		Point p3 = modelVertices[modelFaces[i].id3];
+		Point p1 = worldVertices[modelFaces[i].id1];
+		Point p2 = worldVertices[modelFaces[i].id2];
+		Point p3 = worldVertices[modelFaces[i].id3];
 		glVertex3f(p1.x, p1.y, p1.z);
 		glVertex3f(p2.x, p2.y, p2.z);
 		glVertex3f(p3.x, p3.y, p3.z);
@@ -379,7 +390,7 @@ void draw() {
 
 void writeImageByIndex(int index,SDL_Surface *surf) {
 	char buffer[128];
-	sprintf(buffer,"%d-pcd.ppm",index);
+	sprintf(buffer,"%d.ppm",index);
 	FILE* f = fopen(buffer,"w");
 	fprintf(f,"P6\n%d %d\n255\n",surf->w,surf->h);
 	unsigned char* pixels = new unsigned char[surf->w*surf->h*3]();
@@ -399,7 +410,9 @@ int main(int argc,char* argv[]) {
 		return 1;
 	}
 
-	loadPLY("backhoe2.ply");
+//	loadPLY("backhoe2.ply",0.0254);
+//	loadPLY("car2.ply",0.0254);
+	loadPLY("worker1.ply",0.0254);
 	char buffer[1024];
 	cloud = NewPCD(argv[1]);
 	if (!cloud)
@@ -409,7 +422,7 @@ int main(int argc,char* argv[]) {
 #if TOP_VIEW
 	cameraX = centerX = 12;
 	cameraY = centerY = -5;
-	cameraZ = 20;
+	cameraZ = 25;
 #else
 	cameraX = (extent.maxX - extent.minX)/2;
 	cameraY = (extent.maxY - extent.minY)/2;
@@ -424,6 +437,7 @@ int main(int argc,char* argv[]) {
 	glLoadIdentity();
 	gluPerspective(fov,(double)640/480,1,1000);
 
+	int index=1;
 	int interval = 10000;
 	SDL_Event event;
 	while (SDL_PollEvent(&event)); //clear event buffer
@@ -454,8 +468,45 @@ int main(int argc,char* argv[]) {
 						draw();
 						break;
 						case 'n':
+						translateModel({10,-5,0.5},0);
+						draw();
+						writeImageByIndex(index++,screen);
 						break;
 						case 'm':
+						{
+							FILE* target_point = fopen("label_point_3d.txt","w");
+							float minX = modelVertices[0].x;
+							float maxX = modelVertices[0].x;
+							float minY = modelVertices[0].y;
+							float maxY = modelVertices[0].y;
+							for (size_t i=1;i<modelVertices.size();i++) {
+								if (modelVertices[i].x < minX) minX = modelVertices[i].x;
+								if (modelVertices[i].x > maxX) maxX = modelVertices[i].x;
+								if (modelVertices[i].y < minY) minY = modelVertices[i].y;
+								if (modelVertices[i].y > maxY) maxY = modelVertices[i].y;
+							}
+							Point p = {0,0,0.5};
+							float theta = 0;
+							int numDivisions = 8;
+							for (size_t i=0;i<numDivisions;i++) {
+								p.x = 12 + 3 * cos(theta);
+								p.y = -8 + 3 * sin(theta);
+								translateModel(p,theta);
+								draw();
+								writeImageByIndex(index++,screen);
+								float x1 = minX * cos(theta) - minY * sin(theta) + p.x;
+								float y1 = minX * sin(theta) + minY * cos(theta) + p.y;
+								float x2 = maxX * cos(theta) - minY * sin(theta) + p.x;
+								float y2 = maxX * sin(theta) + minY * cos(theta) + p.y;
+								float x3 = minX * cos(theta) - maxY * sin(theta) + p.x;
+								float y3 = minX * sin(theta) + maxY * cos(theta) + p.y;
+								float x4 = maxX * cos(theta) - maxY * sin(theta) + p.x;
+								float y4 = maxX * sin(theta) + maxY * cos(theta) + p.y;
+								fprintf(target_point,"4 %.3f %.3f 1 %.3f %.3f 1 %.3f %.3f 1 %.3f %.3f 1\n",x1,y1,x2,y2,x3,y3,x4,y4);
+								theta -= M_PI * 2 / numDivisions / 2;
+							}
+							fclose(target_point);
+						}
 						break;
 						default:
 						break;

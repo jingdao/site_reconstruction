@@ -402,6 +402,7 @@ int main(int argc,char* argv[]) {
 	}
 
 	FILE* target_point = fopen(argv[2],"r");
+	FILE* target_point_3d = fopen("target_point_3d.txt","w");
 	if (!target_point) {
 		printf("Cannot open %s\n",argv[2]);
 		return 1;
@@ -438,10 +439,12 @@ int main(int argc,char* argv[]) {
 			v.push_back(q2);
 			v.push_back(q3);
 			v.push_back(q4);
+			fprintf(target_point_3d,"4 %.3f %.3f 1 %.3f %.3f 1 %.3f %.3f 1 %.3f %.3f 1\n",p1.x,p1.y,p2.x,p2.y,p3.x,p3.y,p4.x,p4.y);
 		}
 		object.push_back(v);
 	}
 	fclose(target_point);
+	fclose(target_point_3d);
 
 	FT_Init_FreeType(&ft);
 	FT_New_Face(ft,"/usr/share/fonts/truetype/freefont/FreeSans.ttf",0,&face);

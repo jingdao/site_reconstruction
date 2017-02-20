@@ -67,6 +67,17 @@ std::vector<Coordinate> polygonCombine(std::vector<Coordinate> P1, std::vector<C
 	return res;
 }
 
+Coordinate centroid(std::vector<Coordinate> P) {
+	Coordinate c = {0,0};
+	for (size_t i=0;i<P.size();i++) {
+		c.x += P[i].x;
+		c.y += P[i].y;
+	}
+	c.x /= P.size();
+	c.y /= P.size();
+	return c;
+}
+
 int main(int argc,char* argv[]) {
 	if (argc < 3) {
 		printf("%s target_point.txt label_point.txt\n",argv[0]);
@@ -135,6 +146,7 @@ int main(int argc,char* argv[]) {
 	float prec_avg=0,prec_stddev=0;
 	float prec_min,prec_max;
 	float norm_acc=0;
+	float centroid_avg=0,centroid_stddev=0;
 	int count=0;
 	for (size_t i=0;i<target_box.size();i++) {
 		if (label_box[i].size()==0)
@@ -155,6 +167,13 @@ int main(int argc,char* argv[]) {
 		prec_stddev += prec*prec;
 		if (i==0 || prec < prec_min) prec_min = prec;
 		if (i==0 || prec > prec_max) prec_max = prec;
+		Coordinate target_centroid = centroid(target_box[i]);
+		Coordinate label_centroid = centroid(label_box[i]);
+		float dist = 0;
+		dist += (target_centroid.x - label_centroid.x) * (target_centroid.x - label_centroid.x);
+		dist += (target_centroid.y - label_centroid.y) * (target_centroid.y - label_centroid.y);
+		centroid_avg += dist;
+		centroid_stddev += dist * dist;
 		printf("Box %lu: %.2f %.2f %8.2f %.4f %.4f\n",i,A1,A2,A3,acc,prec);
 		count++;
 	}
@@ -163,9 +182,12 @@ int main(int argc,char* argv[]) {
 	prec_avg /= count;
 	prec_stddev = sqrt(prec_stddev/count - prec_avg*prec_avg);
 	norm_acc /= count;
+	centroid_avg /= count;
+	centroid_stddev = sqrt(centroid_stddev/count - centroid_avg*centroid_avg);
 	printf("Accuracy Min %.4f Max %.4f Average %.4f +- %.4f Overlap\n",acc_min,acc_max,acc_avg,acc_stddev);
 	printf("Precision Min %.4f Max %.4f Average %.4f +- %.4f Overlap\n",prec_min,prec_max,prec_avg,prec_stddev);
 	printf("Normalized Accuracy %.4f\n",norm_acc);
+	printf("Centroid %.4f +- %.4f\n",centroid_avg,centroid_stddev);
 	fclose(target);
 	fclose(label);
 
