@@ -42,3 +42,5 @@ solve_accuracy: solve_accuracy.cpp
 vocab_tree: vocab_tree.cpp
 	$(CXX) -ggdb3 -std=c++11 -o $@ $< -llapack -lblas 
 
+loadSwing: loadSwing.c
+	$(CC) -Wall -std=gnu99 -g -O3 -o loadSwing loadSwing.c -lSDL -lGL -lGLU -lm
