@@ -291,7 +291,7 @@ int main(int argc, char* argv[]) {
 				case SDL_KEYDOWN:
 					switch( event.key.keysym.sym ){
 						case 'n':
-						if (targetIndex >= maxID) {
+						if (targetIndex > maxID) {
 							printf("maxID reached\n");
 							break;
 						}

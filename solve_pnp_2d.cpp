@@ -244,6 +244,7 @@ int main(int argc, char* argv[]) {
 		float box_x[4];
 		float box_y[4];
 		//write transformed coordinates to file
+		printf("bestParam: %.2f %.2f %.2f %.2f\n",bestParam.k,bestParam.theta,bestParam.Tx,bestParam.Ty);
 		fprintf(camera_location,"%d",numObjects[k]);
 		for(int i=0;i<numObjects[k];i++) {
 			float x = x_target[totalObjects + i];
